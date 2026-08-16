@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+**/build/
+
+# Local configuration
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+
+# Native build artifacts
+.externalNativeBuild/
+.cxx/
+/captures/
+
+# Build outputs
+*.apk
+*.aab
+*.keystore
+!debug.keystore
