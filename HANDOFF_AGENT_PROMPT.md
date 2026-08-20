@@ -133,4 +133,50 @@ cd 'D:\Administrator\Documents\Big-Brother\android-mobile'
 
 - 最后一次交付 APK：`ITT-v2.8-build-20260815-1111-debug.apk`（项目根目录）
 - 无未完成的任务；全部已实现功能构建通过
+- 代码已纳入 Git（android-mobile 本地仓库，分支 main，标签 v2.8），并托管于 GitHub 私有仓库 `panrvisian/itt-android`
+- 新增中英双语 README（`README.md` 中文默认 / `README.en.md` 英文）
 - 交接起点：直接继续用户下一条指令即可
+
+---
+
+## 十一、2026-08 会话补充（Git 与 GitHub 上线）
+
+> 本节由 2026-08-16 / 08-20 会话补充，记录环境验证、Git 初始化与 GitHub 上线情况。
+
+### 1. 环境验证结论（2026-08-16）
+
+- JDK 17（`C:\Program Files\Eclipse Adoptium\jdk-17.0.20+8`）、Android SDK（`D:\Administrator\Documents\Big-Brother\.local\android-sdk`，platform 34、build-tools 34.0.0）、Gradle 8.7、Gradle 依赖缓存均可用
+- 实测 `:app:assembleDebug --rerun-tasks --no-daemon` 构建成功；产物与 `ITT-v2.8-build-20260815-1111-debug.apk` 完全一致（SHA-256 `3D53784625B8A0067BB66B415FB3426B5FFAF5BDC991072CCBEAA3B4D6AFF71F`）
+- Android Studio 未安装；SDK 无模拟器（emulator/system-images 缺失）；`adb devices` 无连接设备 → 只能编译打包，暂无法真机/模拟器运行验证
+- 项目无单元测试/设备测试源码（`testDebugUnitTest` 为 NO-SOURCE）
+- `lintDebug` 通过：29 个 Warning、0 Error（图标形状/未用资源/固定方向/KSP 建议等；含 `ic_history.xml` 无引用，符合既有约束，勿恢复历史功能）
+
+### 2. Git 仓库（2026-08-16 初始化）
+
+- 仓库位置：`android-mobile`（仅 App 相关部分；`..\.local` SDK 与 `bin/obj/publish` 的 .NET 项目不在仓库内）
+- 分支 `main`；首次提交 `6d5fda0`（v2.8 快照）；标签 `v2.8`
+- `.gitignore`：排除 `.gradle/`、`**/build/`、`local.properties`、`.idea/`、`*.iml`、`*.apk`、`*.aab`、`*.keystore` 等
+- 本仓库提交身份：`Panrvisian <panrvisian@gmail.com>`
+- 注意：`android-mobile` 已加入 Administrator 的 `safe.directory` 白名单；Codex 沙箱进程与真实用户进程环境不同，git/gh 操作必须在真实用户环境执行
+
+### 3. GitHub 上线（2026-08-16，私有仓库）
+
+- 仓库：`panrvisian/itt-android`（私有）
+- 推送方式：SSH（`git@github.com:panrvisian/itt-android.git`）。原因：本机 DNS 将 `github.com` 解析到 `20.205.243.166`，该 IP 的 443 端口被网络干扰不可用；`api.github.com`（20.205.243.168）与 SSH 22 端口可用
+- SSH 密钥：`C:\Users\Administrator\.ssh\id_ed25519`（私钥，必须保密）/ `id_ed25519.pub`（公钥，已上传 GitHub）；gh 的 `git_protocol = ssh`
+- README：`README.md`（中文默认）+ `README.en.md`（英文），顶部互相链接；提交 `8357173`
+- Release：`v2.8` 已发布，附件 `ITT-v2.8-build-20260815-1111-debug.apk`（27,026,249 字节）；私有仓库仅 owner 与 Read 权限协作者可下载
+
+### 4. 令牌与安全（2026-08-20）
+
+- 曾有一个经典令牌（`ghp_` 开头）泄露到聊天，已删除；随后用新令牌重新 `gh auth login`
+- 2026-08-20 已验证：SSH 认证成功（`Hi panrvisian!`）、`gh auth status` 正常、`git ls-remote` 可读 `main` 与 `v2.8`
+- 令牌不得粘贴到聊天或写入文件；SSH 私钥不得外传
+
+### 5. 后续工作流（含 Git/GitHub）
+
+1. 中文回复，先列疑问让用户拍板 → 复述计划 → 等「确认」
+2. 实现（UTF-8、字号适配）→ 功能改动升版本（当前 2.8/13 → 2.9/14）
+3. `assembleDebug` 构建成功 → 按需复制 APK 到项目根目录
+4. `git add .` → `git commit -m '说明'` → `git push`（SSH）
+5. 需要交付安装包时：`gh release create <版本> <apk路径> --title ... --notes ...`（私有仓库，仅授权协作者可下载）
