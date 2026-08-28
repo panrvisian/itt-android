@@ -103,6 +103,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -712,6 +713,7 @@ private fun TimelineScreen(
     val day by viewModel.timelineDate.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var compactView by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -723,6 +725,9 @@ private fun TimelineScreen(
                 title = "日期",
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { compactView = !compactView }) {
+                            Text(if (compactView) "比例" else "紧凑", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                         IconTextButton("补录", R.drawable.ic_add, onClick = { onAddManualRecord(day) })
                         TextButton(onClick = { showDatePicker = true }) { Text("跳转") }
                     }
@@ -744,7 +749,13 @@ private fun TimelineScreen(
                 }
             }
         }
-        item { Text("点击色块查看详情，双指纵向缩放时间轴", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item {
+            Text(
+                if (compactView) "点击色块查看详情，记录按开始时间紧凑排列"
+                else "点击色块查看详情，双指纵向缩放时间轴",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         item {
             TimelineContent(
                 settings = settings,
@@ -752,6 +763,7 @@ private fun TimelineScreen(
                 day = day,
                 listState = listState,
                 notedRecordIds = notedRecordIds,
+                compactView = compactView,
                 onRecordClick = onRecordClick
             )
         }
@@ -776,6 +788,7 @@ private fun TimelineContent(
     day: LocalDate,
     listState: LazyListState,
     notedRecordIds: Set<String>,
+    compactView: Boolean,
     onRecordClick: (RecordEntity) -> Unit
 ) {
     val now = produceClock()
@@ -791,17 +804,27 @@ private fun TimelineContent(
         if (dayRecords.isEmpty()) {
             Text("这一天没有记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        TimelineDayView(
-            items = dayRecords,
-            dayStart = dayStart,
-            settings = settings,
-            now = now,
-            showNowLine = showNowLine,
-            verticalScale = timelineVerticalScale,
-            parentListState = listState,
-            onVerticalScaleChange = { timelineVerticalScale = it },
-            onRecordClick = onRecordClick
-        )
+        if (compactView) {
+            if (dayRecords.isNotEmpty()) {
+                CompactTimelineView(
+                    items = dayRecords,
+                    settings = settings,
+                    onRecordClick = onRecordClick
+                )
+            }
+        } else {
+            TimelineDayView(
+                items = dayRecords,
+                dayStart = dayStart,
+                settings = settings,
+                now = now,
+                showNowLine = showNowLine,
+                verticalScale = timelineVerticalScale,
+                parentListState = listState,
+                onVerticalScaleChange = { timelineVerticalScale = it },
+                onRecordClick = onRecordClick
+            )
+        }
     }
 }
 @Composable
@@ -2200,18 +2223,27 @@ private fun buildTimelineItems(
     return positionTimelineRecords(clipped)
 }
 
-private fun positionTimelineRecords(items: List<TimelineRecordUi>): List<TimelineRecordUi> {
-    val result = mutableListOf<TimelineRecordUi>()
+private fun timelineOverlapClusters(items: List<TimelineRecordUi>): List<List<TimelineRecordUi>> {
+    val sorted = items.sortedBy { it.startTime }
+    val clusters = mutableListOf<List<TimelineRecordUi>>()
     var index = 0
-    while (index < items.size) {
+    while (index < sorted.size) {
         val cluster = mutableListOf<TimelineRecordUi>()
-        var clusterEnd = items[index].endTime
-        while (index < items.size && (cluster.isEmpty() || items[index].startTime < clusterEnd)) {
-            val item = items[index]
+        var clusterEnd = sorted[index].endTime
+        while (index < sorted.size && (cluster.isEmpty() || sorted[index].startTime < clusterEnd)) {
+            val item = sorted[index]
             cluster += item
             if (item.endTime > clusterEnd) clusterEnd = item.endTime
             index++
         }
+        clusters += cluster
+    }
+    return clusters
+}
+
+private fun positionTimelineRecords(items: List<TimelineRecordUi>): List<TimelineRecordUi> {
+    val result = mutableListOf<TimelineRecordUi>()
+    timelineOverlapClusters(items).forEach { cluster ->
         val laneEnds = mutableListOf<Long>()
         val positioned = cluster.map { item ->
             val lane = laneEnds.indexOfFirst { it <= item.startTime }.let { if (it >= 0) it else laneEnds.size }
@@ -2257,6 +2289,84 @@ private fun Modifier.twoFingerVerticalZoom(onZoom: (Float) -> Unit): Modifier = 
         } while (event.changes.any { it.pressed })
     }
 }
+private fun timelineTimeText(item: TimelineRecordUi, settings: AppSettings): String =
+    TimeUtils.formatTime(item.startTime, settings.use24Hour) + "→" + TimeUtils.formatTime(item.endTime, settings.use24Hour)
+
+@Composable
+private fun CompactTimelineView(
+    items: List<TimelineRecordUi>,
+    settings: AppSettings,
+    onRecordClick: (RecordEntity) -> Unit
+) {
+    val clusters = remember(items) { timelineOverlapClusters(items) }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        clusters.forEach { cluster ->
+            val laneCount = cluster.maxOfOrNull { it.laneCount }?.coerceAtLeast(1) ?: 1
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                repeat(laneCount) { lane ->
+                    val laneItems = cluster.filter { it.lane == lane }.sortedBy { it.startTime }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        laneItems.forEach { item ->
+                            CompactTimelineRecordBlock(
+                                item = item,
+                                settings = settings,
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onRecordClick(item.record) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTimelineRecordBlock(
+    item: TimelineRecordUi,
+    settings: AppSettings,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val color = colorFromArgb(item.record.groupColorArgbSnapshot)
+    val nameText = if (item.hasNote) "★ " + item.record.eventNameSnapshot else item.record.eventNameSnapshot
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.2f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.55f)),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                nameText,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                timelineTimeText(item, settings),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @Composable
 private fun TimelineDayView(
     items: List<TimelineRecordUi>,
@@ -2374,47 +2484,84 @@ private fun TimelineRecordBlock(
         onClick = onClick
     ) {
         if (showDetails) {
-            val noteText = remember(item.record.id, item.record.noteText, item.hasNote) {
-                if (item.record.noteText.isNotBlank()) item.record.noteText
-                else if (item.hasNote) "[\u56FE\u7247]" else ""
-            }
-            val density = LocalDensity.current
-            val labelStyle = MaterialTheme.typography.labelSmall
-            val lineHeightPx = with(density) { labelStyle.lineHeight.toPx() }
-            val blockHeightPx = with(density) { blockHeight.toPx() }
-            val verticalPaddingPx = with(density) { 3.dp.toPx() * 2 }
-            val noteMaxLines = ((blockHeightPx - verticalPaddingPx - lineHeightPx) / lineHeightPx)
-                .toInt()
-                .coerceAtLeast(0)
-
-            Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (item.hasNote) "\u2605 ${item.record.eventNameSnapshot}" else item.record.eventNameSnapshot,
-                        style = labelStyle,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Text(
-                        TimeUtils.formatTime(item.startTime, settings.use24Hour) + "\u2192" + TimeUtils.formatTime(item.endTime, settings.use24Hour),
-                        style = labelStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val noteText = remember(item.record.id, item.record.noteText, item.hasNote) {
+                    if (item.record.noteText.isNotBlank()) item.record.noteText
+                    else if (item.hasNote) "[图片]" else ""
                 }
-                if (noteText.isNotBlank() && noteMaxLines > 0) {
-                    Text(
-                        noteText,
-                        style = labelStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = noteMaxLines,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                val nameText = if (item.hasNote) "★ " + item.record.eventNameSnapshot else item.record.eventNameSnapshot
+                val timeText = timelineTimeText(item, settings)
+                val density = LocalDensity.current
+                val labelStyle = MaterialTheme.typography.labelSmall
+                val textMeasurer = rememberTextMeasurer()
+                val lineHeightPx = textMeasurer.measure("Ag", style = labelStyle, maxLines = 1).size.height
+                    .toFloat()
+                    .coerceAtLeast(1f)
+                val blockHeightPx = with(density) { blockHeight.toPx() }
+                val verticalPaddingPx = with(density) { 3.dp.toPx() * 2 }
+                val horizontalPaddingPx = with(density) { 4.dp.roundToPx() * 2 }
+                val rowSpacingPx = with(density) { 3.dp.roundToPx() }
+                val contentWidthPx = (constraints.maxWidth - horizontalPaddingPx).coerceAtLeast(0)
+                val nameWidthPx = textMeasurer.measure(nameText, style = labelStyle, maxLines = 1).size.width
+                val timeWidthPx = textMeasurer.measure(timeText, style = labelStyle, maxLines = 1).size.width
+                val singleLineHeader = nameWidthPx + rowSpacingPx + timeWidthPx <= contentWidthPx
+                val headerLineCount = if (singleLineHeader) 1 else 2
+                val headerHeightPx = lineHeightPx * headerLineCount
+                val canShowHeader = blockHeightPx >= verticalPaddingPx + headerHeightPx
+                val noteMaxLines = ((blockHeightPx - verticalPaddingPx - headerHeightPx) / lineHeightPx)
+                    .toInt()
+                    .coerceAtLeast(0)
+
+                if (canShowHeader) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp)) {
+                        if (singleLineHeader) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    nameText,
+                                    style = labelStyle,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Text(
+                                    timeText,
+                                    style = labelStyle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        } else {
+                            Text(
+                                nameText,
+                                style = labelStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                timeText,
+                                style = labelStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (noteText.isNotBlank() && noteMaxLines > 0) {
+                            Text(
+                                noteText,
+                                style = labelStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = noteMaxLines,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         }
