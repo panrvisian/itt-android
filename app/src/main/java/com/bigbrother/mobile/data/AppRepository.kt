@@ -154,6 +154,30 @@ class AppRepository(
         record.id
     }
 
+    suspend fun cloneRecord(recordId: String, eventId: String): String? = database.withTransaction {
+        val source = recordsDao.getById(recordId) ?: return@withTransaction null
+        val event = eventsDao.getById(eventId) ?: return@withTransaction null
+        if (event.isDeleted) return@withTransaction null
+        val group = groupsDao.getById(event.groupId) ?: return@withTransaction null
+
+        val cloned = RecordEntity(
+            eventId = event.id,
+            eventNameSnapshot = event.name,
+            groupIdSnapshot = group.id,
+            groupNameSnapshot = group.name,
+            groupColorArgbSnapshot = group.colorArgb,
+            startTime = source.startTime,
+            endTime = source.endTime
+        )
+        recordsDao.insert(cloned)
+
+        // 已结束记录保持现有跨天拆分规则；进行中记录保留相同开始时间和空结束时间。
+        if (cloned.endTime != null) {
+            normalizeOvernightInTransaction()
+        }
+        cloned.id
+    }
+
     suspend fun endRecord(recordId: String): Boolean = database.withTransaction {
         val record = recordsDao.getById(recordId) ?: return@withTransaction false
         if (record.endTime != null) return@withTransaction true

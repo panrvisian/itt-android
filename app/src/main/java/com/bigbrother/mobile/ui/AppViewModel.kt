@@ -126,6 +126,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.addManualRecord(eventId, startTime, endTime) }
     }
 
+    fun cloneRecord(recordId: String, eventId: String) {
+        viewModelScope.launch { repository.cloneRecord(recordId, eventId) }
+    }
+
     fun endRecord(recordId: String) {
         viewModelScope.launch { repository.endRecord(recordId) }
     }

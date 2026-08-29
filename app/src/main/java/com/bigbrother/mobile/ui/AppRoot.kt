@@ -11,10 +11,17 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -65,6 +72,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,14 +82,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -89,12 +96,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
@@ -110,7 +117,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
-import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.R
@@ -127,6 +133,7 @@ import com.bigbrother.mobile.domain.StatsRangeKind
 import com.bigbrother.mobile.domain.TimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -158,6 +165,7 @@ fun AppRoot(viewModel: MainViewModel) {
     var selectedGroup by remember { mutableStateOf<GroupEntity?>(null) }
     var selectedRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var editingRecord by remember { mutableStateOf<RecordEntity?>(null) }
+    var cloningRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteViewRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteEditRecord by remember { mutableStateOf<RecordEntity?>(null) }
 
@@ -359,6 +367,10 @@ fun AppRoot(viewModel: MainViewModel) {
                 editingRecord = record
                 selectedRecord = null
             },
+            onClone = {
+                cloningRecord = record
+                selectedRecord = null
+            },
             onNote = {
                 selectedRecord = null
                 openNote(record)
@@ -366,6 +378,21 @@ fun AppRoot(viewModel: MainViewModel) {
             onDelete = {
                 if (record.endTime == null) viewModel.deleteRunningRecord(record.id) else viewModel.deleteHistoryRecord(record.id)
                 selectedRecord = null
+            }
+        )
+    }
+
+    cloningRecord?.let { record ->
+        CloneRecordDialog(
+            record = record,
+            sortedEvents = sortedEvents,
+            eventsByGroup = eventsByGroup,
+            groups = visibleGroups,
+            groupById = groupMap,
+            onDismiss = { cloningRecord = null },
+            onConfirm = { eventId ->
+                viewModel.cloneRecord(record.id, eventId)
+                cloningRecord = null
             }
         )
     }
@@ -1543,6 +1570,7 @@ private fun RecordDetailDialog(
     onDismiss: () -> Unit,
     onEnd: () -> Unit,
     onEdit: () -> Unit,
+    onClone: () -> Unit,
     onNote: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1568,14 +1596,228 @@ private fun RecordDetailDialog(
             if (record.endTime == null) {
                 IconTextButton("结束", R.drawable.ic_stop, onClick = onEnd, modifier = Modifier.fillMaxWidth())
                 IconTextButton("编辑", R.drawable.ic_edit, onClick = onEdit, modifier = Modifier.fillMaxWidth())
+                IconTextButton("克隆", R.drawable.ic_clone, onClick = onClone, modifier = Modifier.fillMaxWidth())
                 IconTextButton("备注", R.drawable.ic_notes, onClick = onNote, modifier = Modifier.fillMaxWidth())
                 IconTextButton("删除", R.drawable.ic_delete, onClick = onDelete, modifier = Modifier.fillMaxWidth())
             } else {
                 IconTextButton("编辑", R.drawable.ic_edit, onClick = onEdit, modifier = Modifier.fillMaxWidth())
+                IconTextButton("克隆", R.drawable.ic_clone, onClick = onClone, modifier = Modifier.fillMaxWidth())
                 IconTextButton("备注", R.drawable.ic_notes, onClick = onNote, modifier = Modifier.fillMaxWidth())
                 IconTextButton("删除", R.drawable.ic_delete, onClick = onDelete, modifier = Modifier.fillMaxWidth())
             }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("关闭") }
+        }
+    }
+}
+@Composable
+private fun CloneRecordDialog(
+    record: RecordEntity,
+    sortedEvents: List<EventEntity>,
+    eventsByGroup: Map<String, List<EventEntity>>,
+    groups: List<GroupEntity>,
+    groupById: Map<String, GroupEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    val groupIdsWithEvents = remember(groups, sortedEvents, eventsByGroup) {
+        groupIdsWithEvents(groups, eventsByGroup, sortedEvents)
+    }
+    val initialEvent = remember(record.id, sortedEvents) {
+        sortedEvents.firstOrNull { it.id == record.eventId } ?: sortedEvents.firstOrNull()
+    }
+    var selectedEventId by rememberSaveable("${record.id}_clone_event") {
+        mutableStateOf(initialEvent?.id.orEmpty())
+    }
+    var selectedGroupId by rememberSaveable("${record.id}_clone_group") {
+        mutableStateOf(initialEvent?.groupId.orEmpty())
+    }
+    var showingEventList by rememberSaveable("${record.id}_clone_event_level") {
+        mutableStateOf(false)
+    }
+    val selectedEvent = remember(selectedEventId, sortedEvents) {
+        sortedEvents.firstOrNull { it.id == selectedEventId }
+    }
+    val selectedGroupName = selectedEvent?.let { groupById[it.groupId]?.name ?: "未分组" }.orEmpty()
+    val dialogMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
+
+    LaunchedEffect(record.id, sortedEvents, eventsByGroup) {
+        val currentEvent = sortedEvents.firstOrNull { it.id == selectedEventId }
+        if (currentEvent == null) {
+            val first = sortedEvents.firstOrNull()
+            selectedEventId = first?.id.orEmpty()
+            selectedGroupId = first?.groupId.orEmpty()
+            showingEventList = false
+        } else if (eventsByGroup[selectedGroupId].isNullOrEmpty()) {
+            selectedGroupId = currentEvent.groupId
+            showingEventList = false
+        }
+    }
+
+    SimpleDialog(title = "克隆记录", onDismiss = onDismiss) {
+        Column(modifier = Modifier.heightIn(max = dialogMaxHeight)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .stopParentScrollAtBounds()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("原记录：${record.eventNameSnapshot}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "时间：${TimeUtils.formatDateTime(record.startTime)} → " +
+                        (record.endTime?.let { TimeUtils.formatDateTime(it) } ?: "进行中"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text("选择克隆到的事件")
+                if (sortedEvents.isEmpty()) {
+                    Text("请先创建事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                alpha = LocalComponentAlpha.current
+                            )
+                        )
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Text("当前选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                selectedEvent?.name ?: "未选择事件",
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (selectedGroupName.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    selectedGroupName,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                                alpha = LocalComponentAlpha.current
+                            )
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 230.dp)
+                                .stopParentScrollAtBounds()
+                                .verticalScroll(rememberScrollState())
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (!showingEventList) {
+                                Text(
+                                    "先选择分组",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                                groupIdsWithEvents.forEach { groupId ->
+                                    val group = groupById[groupId]
+                                    val count = eventsByGroup[groupId].orEmpty().size
+                                    TextButton(
+                                        onClick = {
+                                            selectedGroupId = groupId
+                                            showingEventList = true
+                                        },
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .background(
+                                                        colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt()),
+                                                        shape = RoundedCornerShape(99.dp)
+                                                    )
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                group?.name ?: "未分组",
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Start
+                                            )
+                                            Text("$count 个", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = { showingEventList = false },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text("返回分组") }
+                                    Text(
+                                        groupById[selectedGroupId]?.name ?: "未分组",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                eventsByGroup[selectedGroupId].orEmpty().forEach { event ->
+                                    TextButton(
+                                        onClick = { selectedEventId = event.id },
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            RadioButton(
+                                                selected = selectedEventId == event.id,
+                                                onClick = { selectedEventId = event.id }
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                if (event.isFavorite) "★ ${event.name}" else event.name,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Start
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                ) { Text("取消") }
+                Button(
+                    onClick = { if (selectedEventId.isNotBlank()) onConfirm(selectedEventId) },
+                    enabled = selectedEventId.isNotBlank(),
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                ) { Text("确认") }
+            }
         }
     }
 }
@@ -2264,29 +2506,94 @@ private val stopParentScrollAtBoundsConnection = object : NestedScrollConnection
 private fun Modifier.stopParentScrollAtBounds(enabled: Boolean = true): Modifier =
     if (enabled) nestedScroll(stopParentScrollAtBoundsConnection) else this
 
-private fun Modifier.twoFingerVerticalZoom(onZoom: (Float) -> Unit): Modifier = pointerInput(onZoom) {
+private const val TIMELINE_MIN_VERTICAL_SCALE = 0.7f
+private const val TIMELINE_MAX_VERTICAL_SCALE = 36f
+
+private class TimelineFlingController {
+    var job: Job? = null
+}
+
+private fun Modifier.timelineTransformGestures(
+    onTransform: State<(Offset, Offset, Float) -> Unit>,
+    onGestureStart: State<() -> Unit>,
+    onSingleFingerFling: State<(Float) -> Unit>
+): Modifier = pointerInput(Unit) {
     awaitEachGesture {
-        var wasTwoFingerGesture = false
-        do {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        onGestureStart.value()
+
+        var singlePointerId = down.id
+        var singleVelocityTracker: VelocityTracker? = null
+        var singleTravelY = 0f
+        var accumulatedMultiPan = Offset.Zero
+        var accumulatedMultiZoom = 1f
+        var multiGestureStarted = false
+        var previousPointerCount = 1
+
+        while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val pressedChanges = event.changes.filter { it.pressed }
-            if (pressedChanges.size >= 2) {
-                wasTwoFingerGesture = true
-                val first = pressedChanges[0]
-                val second = pressedChanges[1]
-                val previousDistanceY = abs(first.previousPosition.y - second.previousPosition.y)
-                val currentDistanceY = abs(first.position.y - second.position.y)
-                if (previousDistanceY > 8f && currentDistanceY > 8f) {
-                    val zoom = currentDistanceY / previousDistanceY
-                    if (zoom.isFinite() && abs(zoom - 1f) > 0.003f) {
-                        onZoom(zoom)
+            val pointerCount = pressedChanges.size
+
+            if (pointerCount >= 2) {
+                val centroid = event.calculateCentroid(useCurrent = false)
+                val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                val pan = event.calculatePan()
+                val zoom = event.calculateZoom()
+                if (centroid.x.isFinite() && centroid.y.isFinite() && pan.x.isFinite() && pan.y.isFinite() && zoom.isFinite() && zoom > 0f) {
+                    accumulatedMultiPan += pan
+                    accumulatedMultiZoom *= zoom
+                    if (!multiGestureStarted) {
+                        val panMotion = accumulatedMultiPan.getDistance()
+                        val zoomMotion = abs(1f - accumulatedMultiZoom) * centroidSize
+                        multiGestureStarted = panMotion > viewConfiguration.touchSlop || zoomMotion > viewConfiguration.touchSlop
+                    }
+                    if (multiGestureStarted) {
+                        onTransform.value(centroid, pan, zoom)
                     }
                 }
-                for (change in event.changes) change.consume()
-            } else if (wasTwoFingerGesture) {
-                for (change in event.changes) change.consume()
+                singleVelocityTracker = null
+                singleTravelY = 0f
+            } else if (pointerCount == 1 && multiGestureStarted) {
+                val change = pressedChanges.first()
+                if (previousPointerCount != 1 || change.id != singlePointerId || singleVelocityTracker == null) {
+                    singlePointerId = change.id
+                    singleVelocityTracker = VelocityTracker().apply {
+                        addPosition(change.uptimeMillis, change.position)
+                    }
+                    singleTravelY = 0f
+                } else {
+                    val pan = change.position - change.previousPosition
+                    singleVelocityTracker?.addPosition(change.uptimeMillis, change.position)
+                    singleTravelY += abs(pan.y)
+                    if (pan.x.isFinite() && pan.y.isFinite() && pan != Offset.Zero) {
+                        onTransform.value(change.previousPosition, pan, 1f)
+                    }
+                }
+            } else if (pointerCount == 0 && multiGestureStarted) {
+                val releasedChange = event.changes.firstOrNull { it.id == singlePointerId }
+                val velocityTracker = singleVelocityTracker
+                if (previousPointerCount == 1 && releasedChange != null && velocityTracker != null) {
+                    velocityTracker.addPosition(releasedChange.uptimeMillis, releasedChange.position)
+                    if (singleTravelY > viewConfiguration.touchSlop) {
+                        val maximumVelocity = viewConfiguration.maximumFlingVelocity
+                        val velocityY = velocityTracker.calculateVelocity().y
+                            .coerceIn(-maximumVelocity, maximumVelocity)
+                        if (velocityY.isFinite() && abs(velocityY) > 1f) {
+                            onSingleFingerFling.value(velocityY)
+                        }
+                    }
+                }
             }
-        } while (event.changes.any { it.pressed })
+
+            if (multiGestureStarted) {
+                event.changes.forEach { change ->
+                    if (change.position != change.previousPosition) change.consume()
+                }
+            }
+            previousPointerCount = pointerCount
+            if (pointerCount == 0) break
+        }
     }
 }
 private fun timelineTimeText(item: TimelineRecordUi, settings: AppSettings): String =
@@ -2380,36 +2687,54 @@ private fun TimelineDayView(
     onRecordClick: (RecordEntity) -> Unit
 ) {
     val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
     val scope = rememberCoroutineScope()
-    var timelineTopInWindow by remember { mutableFloatStateOf(0f) }
-    val scale = verticalScale.coerceIn(0.7f, 72f)
+    val flingBehavior = ScrollableDefaults.flingBehavior()
+    val flingController = remember { TimelineFlingController() }
+    val scale = verticalScale.coerceIn(TIMELINE_MIN_VERTICAL_SCALE, TIMELINE_MAX_VERTICAL_SCALE)
+    val minuteHeightAtScaleOnePx = with(density) { 1.dp.toPx() }
+    val topPaddingPx = with(density) { 8.dp.toPx() }
+    val gestureStartHandler = rememberUpdatedState<() -> Unit> {
+        flingController.job?.cancel()
+        flingController.job = null
+    }
+    val singleFingerFlingHandler = rememberUpdatedState<(Float) -> Unit> { initialVelocity ->
+        flingController.job?.cancel()
+        flingController.job = scope.launch {
+            parentListState.scroll {
+                with(flingBehavior) {
+                    performFling(initialVelocity)
+                }
+            }
+        }
+    }
+    val transformHandler = rememberUpdatedState<(Offset, Offset, Float) -> Unit> { centroid, pan, gestureZoom ->
+        if (gestureZoom.isFinite() && gestureZoom > 0f && centroid.y.isFinite() && pan.y.isFinite()) {
+            val oldScale = scale
+            val newScale = (oldScale * gestureZoom)
+                .coerceIn(TIMELINE_MIN_VERTICAL_SCALE, TIMELINE_MAX_VERTICAL_SCALE)
+            val appliedZoom = newScale / oldScale
+            val oldMinuteHeightPx = minuteHeightAtScaleOnePx * oldScale
+            val anchorY = (centroid.y - topPaddingPx)
+                .coerceIn(0f, oldMinuteHeightPx * 1440f)
+            val scrollDelta = anchorY * (appliedZoom - 1f) - pan.y
+
+            if (abs(newScale - oldScale) > 0.001f) {
+                onVerticalScaleChange(newScale)
+            }
+            if (abs(scrollDelta) > 0.01f) {
+                parentListState.dispatchRawDelta(scrollDelta)
+            }
+        }
+    }
     val labelWidth = 54.dp
     val minuteHeight = 1.dp * scale
     val timelineHeight = minuteHeight * 1440f
     Card(
-        modifier = Modifier
-            .onGloballyPositioned { coordinates -> timelineTopInWindow = coordinates.positionInWindow().y }
-            .twoFingerVerticalZoom { zoom ->
-                val oldScale = scale
-                val newScale = (oldScale * zoom).coerceIn(0.7f, 72f)
-                if (abs(newScale - oldScale) > 0.001f) {
-                    val oldMinuteHeightPx = with(density) { (1.dp * oldScale).toPx() }
-                    val newMinuteHeightPx = with(density) { (1.dp * newScale).toPx() }
-                    val topPaddingPx = with(density) { 8.dp.toPx() }
-                    val screenCenterY = with(density) { configuration.screenHeightDp.dp.toPx() / 2f }
-                    val centerYInTimeline = (screenCenterY - timelineTopInWindow - topPaddingPx).coerceIn(0f, oldMinuteHeightPx * 1440f)
-                    val centerMinutes = if (oldMinuteHeightPx > 0f) centerYInTimeline / oldMinuteHeightPx else 0f
-                    val scrollDelta = centerMinutes * (newMinuteHeightPx - oldMinuteHeightPx)
-                    onVerticalScaleChange(newScale)
-                    if (abs(scrollDelta) > 0.5f) {
-                        scope.launch {
-                            withFrameNanos { }
-                            parentListState.scrollBy(scrollDelta)
-                        }
-                    }
-                }
-            },
+        modifier = Modifier.timelineTransformGestures(
+            onTransform = transformHandler,
+            onGestureStart = gestureStartHandler,
+            onSingleFingerFling = singleFingerFlingHandler
+        ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(timelineHeight + 16.dp).padding(vertical = 8.dp)) {
