@@ -50,6 +50,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _statsRange = MutableStateFlow(StatsRangeKind.Today)
     val statsRange: StateFlow<StatsRangeKind> = _statsRange.asStateFlow()
 
+    private val _statsDate = MutableStateFlow(LocalDate.now())
+    val statsDate: StateFlow<LocalDate> = _statsDate.asStateFlow()
+
     private val _timelineDate = MutableStateFlow(LocalDate.now())
     val timelineDate: StateFlow<LocalDate> = _timelineDate.asStateFlow()
 
@@ -68,6 +71,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setStatsRange(range: StatsRangeKind) {
         _statsRange.value = range
+    }
+
+    fun setStatsDate(date: LocalDate) {
+        _statsDate.value = date
     }
 
     fun setTimelineDate(date: LocalDate) {

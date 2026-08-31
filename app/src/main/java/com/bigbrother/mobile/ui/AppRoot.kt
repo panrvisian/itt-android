@@ -10,6 +10,7 @@ import androidx.annotation.DrawableRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
@@ -22,6 +23,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -59,6 +61,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +95,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -128,6 +132,7 @@ import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
 import com.bigbrother.mobile.data.WallpaperMode
+import com.bigbrother.mobile.domain.GroupStat
 import com.bigbrother.mobile.domain.StatsCalculator
 import com.bigbrother.mobile.domain.StatsRangeKind
 import com.bigbrother.mobile.domain.TimeUtils
@@ -142,6 +147,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -154,6 +160,7 @@ fun AppRoot(viewModel: MainViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val statsRange by viewModel.statsRange.collectAsStateWithLifecycle()
+    val statsDate by viewModel.statsDate.collectAsStateWithLifecycle()
     val timelineDate by viewModel.timelineDate.collectAsStateWithLifecycle()
     val notesDate by viewModel.notesDate.collectAsStateWithLifecycle()
 
@@ -171,7 +178,9 @@ fun AppRoot(viewModel: MainViewModel) {
 
     val visibleGroups = remember(groups) { groups.visibleGroupsForUi() }
     val visibleEvents = remember(events) { events.visibleEventsForUi() }
-    val eventRecordCounts = remember(records) { records.groupingBy { it.eventId }.eachCount() }
+    val eventRecordCounts = remember(records) {
+        records.filterNot { it.isContinuation }.groupingBy { it.eventId }.eachCount()
+    }
     val sortedEvents = remember(visibleEvents, eventRecordCounts) { visibleEvents.sortedForUi(eventRecordCounts) }
     val eventsByGroup = remember(sortedEvents) { sortedEvents.groupBy { it.groupId } }
     val eventMap = remember(visibleEvents) { visibleEvents.associateBy { it.id } }
@@ -279,7 +288,9 @@ fun AppRoot(viewModel: MainViewModel) {
                     events = visibleEvents,
                     records = records,
                     range = statsRange,
-                    onRangeChange = viewModel::setStatsRange
+                    date = statsDate,
+                    onRangeChange = viewModel::setStatsRange,
+                    onDateChange = viewModel::setStatsDate
                 )
                 AppTab.Notes -> NotesScreen(
                     notedRecords = notedRecords,
@@ -856,30 +867,154 @@ private fun TimelineContent(
 }
 @Composable
 private fun StatsScreen(
-
     settings: AppSettings,
     events: List<EventEntity>,
     records: List<RecordEntity>,
     range: StatsRangeKind,
-    onRangeChange: (StatsRangeKind) -> Unit
+    date: LocalDate,
+    onRangeChange: (StatsRangeKind) -> Unit,
+    onDateChange: (LocalDate) -> Unit
 ) {
-    val bounds = remember(range, settings) {
-        StatsCalculator.rangeFor(range, LocalDate.now(), settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks)
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    val selectedGroupIdState = rememberSaveable { mutableStateOf("") }
+    var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
+    val bounds = remember(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks) {
+        StatsCalculator.rangeFor(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks)
     }
     val result = remember(records, events, bounds) {
         StatsCalculator.compute(records, events, bounds.first, bounds.second)
     }
     val ranges = listOf(StatsRangeKind.Today, StatsRangeKind.Week, StatsRangeKind.Month, StatsRangeKind.Semester)
-    val labels = listOf("今天", "本周", "本月", "学期")
+    val labels = listOf("天", "周", "月", "学期")
+    val periodStartDate = remember(bounds) { TimeUtils.toLocalDate(bounds.first) }
+    val periodEndDate = remember(bounds) { TimeUtils.toLocalDate(bounds.second).minusDays(1) }
+    val periodLabel = when (range) {
+        StatsRangeKind.Today -> periodStartDate.toString()
+        StatsRangeKind.Week -> "$periodStartDate 至 $periodEndDate"
+        StatsRangeKind.Month -> "${periodStartDate.year} 年 ${periodStartDate.monthValue} 月"
+        StatsRangeKind.Semester -> "$periodStartDate 至 $periodEndDate"
+    }
+    val previousLabel = when (range) {
+        StatsRangeKind.Today -> "前一天"
+        StatsRangeKind.Week -> "上一周"
+        StatsRangeKind.Month -> "上个月"
+        StatsRangeKind.Semester -> ""
+    }
+    val currentLabel = when (range) {
+        StatsRangeKind.Today -> "今天"
+        StatsRangeKind.Week -> "本周"
+        StatsRangeKind.Month -> "本月"
+        StatsRangeKind.Semester -> ""
+    }
+    val nextLabel = when (range) {
+        StatsRangeKind.Today -> "后一天"
+        StatsRangeKind.Week -> "下一周"
+        StatsRangeKind.Month -> "下个月"
+        StatsRangeKind.Semester -> ""
+    }
+    val canNavigateDate = range != StatsRangeKind.Semester
+    val selectedGroupId = selectedGroupIdState.value
+    val selectedGroup = remember(result.groups, selectedGroupId) { findGroupById(result.groups, selectedGroupId) }
+    val displayedEventItems = selectedGroup?.items ?: result.items
+
+    LaunchedEffect(result.groups, selectedGroupId, selectedEventId) {
+        val currentGroup = findGroupById(result.groups, selectedGroupId)
+        if (selectedGroupId.isNotEmpty() && currentGroup == null) {
+            selectedGroupIdState.value = ""
+            selectedEventId = null
+        } else if (selectedEventId != null && currentGroup?.items?.none { it.eventId == selectedEventId } != false) {
+            selectedEventId = null
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp)
     ) {
         item {
-            SectionCard(title = "统计范围") {
-                ChoiceChipRow(labels = labels, selectedIndex = ranges.indexOf(range), onSelected = { onRangeChange(ranges[it]) })
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        labels.forEachIndexed { index, label ->
+                            if (index > 0) Spacer(modifier = Modifier.width(6.dp))
+                            FilterChip(
+                                selected = ranges[index] == range,
+                                onClick = { onRangeChange(ranges[index]) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            periodLabel,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = if (canNavigateDate) 56.dp else 0.dp),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        if (canNavigateDate) {
+                            TextButton(
+                                onClick = { showDatePicker = true },
+                                modifier = Modifier.align(Alignment.CenterEnd)
+                            ) {
+                                Text("跳转")
+                            }
+                        }
+                    }
+                    if (canNavigateDate) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    onDateChange(
+                                        when (range) {
+                                            StatsRangeKind.Today -> date.minusDays(1)
+                                            StatsRangeKind.Week -> date.minusWeeks(1)
+                                            StatsRangeKind.Month -> date.minusMonths(1)
+                                            StatsRangeKind.Semester -> date
+                                        }
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(previousLabel, maxLines = 1) }
+                            TextButton(onClick = { onDateChange(LocalDate.now()) }, modifier = Modifier.weight(1f)) {
+                                Text(currentLabel, maxLines = 1)
+                            }
+                            TextButton(
+                                onClick = {
+                                    onDateChange(
+                                        when (range) {
+                                            StatsRangeKind.Today -> date.plusDays(1)
+                                            StatsRangeKind.Week -> date.plusWeeks(1)
+                                            StatsRangeKind.Month -> date.plusMonths(1)
+                                            StatsRangeKind.Semester -> date
+                                        }
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(nextLabel, maxLines = 1) }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -895,27 +1030,71 @@ private fun StatsScreen(
             }
         }
         item {
-            SectionCard(title = "事件排行") {
-                if (result.items.isEmpty()) {
+            SectionCard(
+                title = selectedGroup?.let { "分组时间占比 · ${it.groupName}" } ?: "分组时间占比",
+                trailing = {
+                    if (selectedGroup != null) {
+                        TextButton(
+                            onClick = {
+                                selectedGroupIdState.value = ""
+                                selectedEventId = null
+                            }
+                        ) {
+                            Text("返回")
+                        }
+                    }
+                }
+            ) {
+                when {
+                    result.groups.isEmpty() -> {
+                        Text("没有可统计的记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    selectedGroup != null -> {
+                        GroupEventTimePieChart(
+                            group = selectedGroup,
+                            selectedEventId = selectedEventId,
+                            onEventSelected = { selectedEventId = it }
+                        )
+                    }
+                    else -> {
+                        GroupTimePieChart(
+                            groups = result.groups,
+                            total = result.sumTotal,
+                            onGroupSelected = {
+                                selectedGroupIdState.value = it.groupId
+                                selectedEventId = null
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            SectionCard(title = selectedGroup?.let { "事件排行 · ${it.groupName}" } ?: "事件排行") {
+                if (displayedEventItems.isEmpty()) {
                     Text("没有可统计的记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    val maxMillis = max(1L, result.items.maxOf { it.total.toMillis() })
+                    val maxMillis = max(1L, displayedEventItems.maxOf { it.total.toMillis() })
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        result.items.forEach { item ->
+                        displayedEventItems.forEach { item ->
                             val progress = item.total.toMillis().toFloat() / maxMillis.toFloat()
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text(item.eventName, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(formatDurationToMinute(item.total))
                                 }
-                                Box(modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)) {
-                                    Box(modifier = Modifier
-                                        .fillMaxWidth(progress)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
                                         .height(8.dp)
-                                        .background(colorFromArgb(item.groupColorArgb)))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(progress)
+                                            .height(8.dp)
+                                            .background(colorFromArgb(item.groupColorArgb))
+                                    )
                                 }
                             }
                         }
@@ -924,8 +1103,243 @@ private fun StatsScreen(
             }
         }
     }
+
+    if (showDatePicker && canNavigateDate) {
+        DateWheelDialog(
+            title = "选择统计日期",
+            initialDate = date,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                onDateChange(it)
+                showDatePicker = false
+            }
+        )
+    }
 }
 
+@Composable
+private fun GroupTimePieChart(
+    groups: List<GroupStat>,
+    total: Duration,
+    onGroupSelected: (GroupStat) -> Unit
+) {
+    val durations = remember(groups) { groups.map { it.total.toMillis() } }
+    val sweeps = remember(durations) { calculatePieSweeps(durations) }
+    val dividerColor = MaterialTheme.colorScheme.surface
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Canvas(
+                modifier = Modifier
+                    .size(200.dp)
+                    .pointerInput(groups) {
+                        detectTapGestures { position ->
+                            pieSliceIndexAt(position, size.width, size.height, durations)?.let { index ->
+                                onGroupSelected(groups[index])
+                            }
+                        }
+                    }
+            ) {
+                var startAngle = -90f
+                groups.forEachIndexed { index, group ->
+                    drawArc(
+                        color = colorFromArgb(group.groupColorArgb),
+                        startAngle = startAngle,
+                        sweepAngle = sweeps[index],
+                        useCenter = true
+                    )
+                    startAngle += sweeps[index]
+                }
+                startAngle = -90f
+                groups.forEachIndexed { index, _ ->
+                    drawArc(
+                        color = dividerColor,
+                        startAngle = startAngle,
+                        sweepAngle = sweeps[index],
+                        useCenter = true,
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+                    startAngle += sweeps[index]
+                }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            groups.forEach { group ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onGroupSelected(group) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(colorFromArgb(group.groupColorArgb))
+                    )
+                    Text(
+                        text = group.groupName,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = formatDurationToMinute(group.total) + " · " + formatPercentage(group.total, total),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupEventTimePieChart(
+    group: GroupStat,
+    selectedEventId: String?,
+    onEventSelected: (String) -> Unit
+) {
+    val durations = remember(group.items) { group.items.map { it.total.toMillis() } }
+    val sweeps = remember(durations) { calculatePieSweeps(durations) }
+    val dividerColor = MaterialTheme.colorScheme.surface
+    val selectedOutlineColor = MaterialTheme.colorScheme.onSurface
+    val selectedEvent = group.items.firstOrNull { it.eventId == selectedEventId }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Canvas(
+                modifier = Modifier
+                    .size(200.dp)
+                    .pointerInput(group.items) {
+                        detectTapGestures { position ->
+                            pieSliceIndexAt(position, size.width, size.height, durations)?.let { index ->
+                                onEventSelected(group.items[index].eventId)
+                            }
+                        }
+                    }
+            ) {
+                var startAngle = -90f
+                group.items.forEachIndexed { index, _ ->
+                    drawArc(
+                        color = colorFromArgb(group.groupColorArgb),
+                        startAngle = startAngle,
+                        sweepAngle = sweeps[index],
+                        useCenter = true
+                    )
+                    startAngle += sweeps[index]
+                }
+                startAngle = -90f
+                group.items.forEachIndexed { index, item ->
+                    drawArc(
+                        color = if (item.eventId == selectedEventId) selectedOutlineColor else dividerColor,
+                        startAngle = startAngle,
+                        sweepAngle = sweeps[index],
+                        useCenter = true,
+                        style = Stroke(width = if (item.eventId == selectedEventId) 4.dp.toPx() else 1.5.dp.toPx())
+                    )
+                    startAngle += sweeps[index]
+                }
+            }
+        }
+        selectedEvent?.let { event ->
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(event.eventName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    formatDurationToMinute(event.total) + " · " + formatPercentage(event.total, group.total),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            group.items.forEach { event ->
+                val selected = event.eventId == selectedEventId
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .clickable { onEventSelected(event.eventId) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(colorFromArgb(group.groupColorArgb))
+                            .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(3.dp))
+                    )
+                    Text(
+                        text = event.eventName,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = formatDurationToMinute(event.total) + " · " + formatPercentage(event.total, group.total),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun findGroupById(groups: List<GroupStat>, groupId: String): GroupStat? {
+    if (groupId.isEmpty()) return null
+    return groups.firstOrNull { it.groupId == groupId }
+}
+
+private fun calculatePieSweeps(durations: List<Long>): List<Float> {
+    val total = durations.sum()
+    if (total <= 0L) return List(durations.size) { 0f }
+    var accumulated = 0f
+    return durations.mapIndexed { index, duration ->
+        val sweep = if (index == durations.lastIndex) {
+            360f - accumulated
+        } else {
+            (duration.toDouble() * 360.0 / total.toDouble()).toFloat()
+        }.coerceAtLeast(0f)
+        accumulated += sweep
+        sweep
+    }
+}
+
+private fun pieSliceIndexAt(position: Offset, width: Int, height: Int, durations: List<Long>): Int? {
+    if (width <= 0 || height <= 0 || durations.isEmpty()) return null
+    val centerX = width / 2f
+    val centerY = height / 2f
+    val dx = position.x - centerX
+    val dy = position.y - centerY
+    val radius = minOf(width, height) / 2f
+    if (dx * dx + dy * dy > radius * radius) return null
+
+    val total = durations.sum()
+    if (total <= 0L) return null
+    val angle = (Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())) + 450.0) % 360.0
+    var accumulated = 0.0
+    durations.forEachIndexed { index, duration ->
+        accumulated += duration.toDouble() * 360.0 / total.toDouble()
+        if (angle < accumulated || index == durations.lastIndex) return index
+    }
+    return null
+}
+
+private fun formatPercentage(part: Duration, total: Duration): String {
+    val totalMillis = total.toMillis()
+    if (totalMillis <= 0L) return "0.0%"
+    val percentage = part.toMillis().toDouble() * 100.0 / totalMillis.toDouble()
+    return java.lang.String.format(java.util.Locale.getDefault(), "%.1f%%", percentage)
+}
 @Composable
 private fun SettingsScreen(
     viewModel: MainViewModel,

@@ -85,7 +85,7 @@ ITT 是一款面向个人的计时记录应用，支持按分组/事件组织活
 Windows PowerShell 命令行打包：
 
 ```powershell
-$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20+8'
+$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 .\gradlew.bat :app:assembleDebug --no-daemon
 ```

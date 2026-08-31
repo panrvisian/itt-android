@@ -85,7 +85,7 @@ ITT is a personal time-tracking app that organizes activities into groups and ev
 Build a debug APK from Windows PowerShell:
 
 ```powershell
-$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20+8'
+$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 .\gradlew.bat :app:assembleDebug --no-daemon
 ```

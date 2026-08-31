@@ -20,7 +20,15 @@ $ErrorActionPreference = 'Stop'
 # ---------- paths ----------
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $SdkDir     = 'D:\Administrator\Documents\Big-Brother\.local\android-sdk'
-$JdkDir     = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.20+8'
+$MachineJavaHome = [Environment]::GetEnvironmentVariable('JAVA_HOME', 'Machine')
+$JdkDir = if (
+    -not [string]::IsNullOrWhiteSpace($MachineJavaHome) -and
+    (Test-Path (Join-Path $MachineJavaHome 'bin\java.exe'))
+) {
+    $MachineJavaHome.TrimEnd('\')
+} else {
+    'C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot'
+}
 $Adb        = Join-Path $SdkDir 'platform-tools\adb.exe'
 $Gradlew    = Join-Path $ProjectDir 'gradlew.bat'
 $ApkPath    = Join-Path $ProjectDir 'app\build\outputs\apk\debug\app-debug.apk'
