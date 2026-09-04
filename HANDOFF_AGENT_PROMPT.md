@@ -10,9 +10,9 @@
 - Android 配置：applicationId `com.bigbrother.mobile`，minSdk 31，targetSdk 34，compileSdk 34
 - 当前正式版本：`versionName = "2.11"`，`versionCode = 16`
 - 当前分支：`main`
-- 最新正式提交：`6628070`（`v2.11：优化时间轴缩放与滚动手势`）
+- 最新正式提交：本次文档和自动脚本更新提交（以 `git log -1` 为准）
 - `origin`：`git@github.com:panrvisian/itt-android.git`
-- GitHub 仓库为私有仓库，当前正式标签和 Release 为 `v2.11`
+- GitHub 仓库为公开仓库；当前正式标签和 Release 为 `v2.11`
 - 当前分支在 `v2.11` 正式版本之后继续维护；开始工作前先查看 `git status`、`git log -1` 和 `git diff`，不要覆盖已有修改。
 
 当前正式发布文件：
@@ -23,9 +23,8 @@
 
 ## 二、构建环境
 
-- JDK 17：`C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`
-- 当前运行时：Temurin `17.0.20.1+1`
-- Android SDK：`D:\Administrator\Documents\Big-Brother\.local\android-sdk`
+- JDK：要求 JDK 17，由当前主机的 `JAVA_HOME` 指向实际安装目录
+- Android SDK：由当前主机的 `ANDROID_SDK_ROOT` 或 `ANDROID_HOME` 指定；也可由 `local.properties` 提供本机路径
 - Gradle Wrapper：8.7
 - Kotlin/JVM 目标：17
 - Compose Compiler Extension：1.5.14
@@ -33,9 +32,12 @@
 常用命令：
 
 ```powershell
-$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot'
-$env:Path="$env:JAVA_HOME\bin;$env:Path"
-Set-Location 'D:\Administrator\Documents\Big-Brother\android-mobile'
+# Replace these examples with paths on the current host when needed.
+$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
+$env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
+$env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
+Set-Location '<repository>\android-mobile'
 .\gradlew.bat :app:compileDebugKotlin --no-daemon
 .\gradlew.bat :app:assembleDebug --no-daemon
 ```
@@ -47,7 +49,8 @@ Set-Location 'D:\Administrator\Documents\Big-Brother\android-mobile'
 
 环境注意事项：
 
-- `auto_install/deploy.ps1` 和 `auto_install/menu.ps1` 优先使用机器级 `JAVA_HOME`，无效时回退到上述 JDK。
+- `auto_install/common.ps1` 统一解析 JDK 和 Android SDK；优先读取当前主机环境变量，并兼容有效的 `local.properties`、常见安装目录和 PATH。
+- `auto_install/deploy.ps1`、`auto_install/menu.ps1`、`auto_install/wifi-adb.ps1` 不再写死作者主机的 SDK/JDK/ADB 路径；其他主机按 `AUTO_INSTALL.md` 配置环境变量即可。
 - 构建被中断后若出现无法清理输出目录或 Gradle daemon 已停止，先检查残留的 Gradle/Kotlin Java 进程，只停止确认属于旧构建的进程，再重试。
 - Codex 环境可能出现 `java.io.IOException: Unable to establish loopback connection`。临时处理方式：从当前 JDK 的 `lib/src.zip` 提取 `java.base/sun/nio/ch/PipeImpl.java` 到系统临时目录，将 `this.preferUnixDomain = preferUnixDomain;` 临时改为 `this.preferUnixDomain = false;`，使用 `javac --patch-module java.base=<源码目录> -d <输出目录>` 编译，再仅为本次 Gradle 进程设置 `JAVA_TOOL_OPTIONS=--patch-module=java.base=<输出目录>`。完成后删除临时源码和 class，不修改 `gradle.properties` 或项目脚本。
 - 当前项目没有单元测试或设备测试源码，基础验证以 Kotlin 编译和按需完整构建为主。
@@ -70,7 +73,10 @@ Set-Location 'D:\Administrator\Documents\Big-Brother\android-mobile'
 - `ui/NoteScreens.kt`：备注列表、查看和编辑界面
 - `ui/AppComponents.kt`：通用卡片、长按事件块和选择控件
 - `ui/Theme.kt`：主题和应用内字号；`ui/MainActivity.kt`：应用入口和启动闪屏
+- `widget/`：1×1 和 4×2 桌面小组件
 - `AndroidManifest.xml` 与 `res/xml/file_paths.xml`：拍照备注使用的 FileProvider
+- `auto_install/common.ps1`、`auto_install/deploy.ps1`、`auto_install/menu.ps1`、`auto_install/wifi-adb.ps1`：跨主机工具解析和自动部署
+- `README.md`、`README.en.md`、`BUILD_APK.md`、`AUTO_INSTALL.md`：协作者使用说明
 
 ### 2. Room 与备注文件
 
@@ -209,8 +215,9 @@ Set-Location 'D:\Administrator\Documents\Big-Brother\android-mobile'
 当前 `main` 在 `v2.11` 正式版本基础上包含以下后续维护，版本号仍为 `2.11 / 16`：
 
 1. JDK 与自动脚本维护：
-   - `JDK_MIGRATION_NOTICE.md`、`README.md`、`README.en.md` 已使用当前 JDK 17 路径。
-   - `auto_install/deploy.ps1` 和 `auto_install/menu.ps1` 优先读取有效的机器级 `JAVA_HOME`，无效时回退到当前 Temurin JDK。
+   - JDK 文档改为主机无关的 JDK 17 配置说明，不再记录某一台电脑的绝对路径。
+   - `auto_install/common.ps1` 统一解析 `JAVA_HOME`、`ANDROID_SDK_ROOT`、`ANDROID_HOME`、`local.properties` 和 PATH；其他主机按 `AUTO_INSTALL.md` 配置即可。
+   - `auto_install/deploy.ps1`、`auto_install/menu.ps1` 和 `auto_install/wifi-adb.ps1` 共用上述解析逻辑。
 2. 首页与统计功能：
    - 首页事件频率排除跨天记录的续段，每次跨天记录只计算一次。
    - 统计页支持其他天、周、月的前后导航和日期跳转，天、周、月共用统计基准日期。
@@ -223,7 +230,7 @@ Set-Location 'D:\Administrator\Documents\Big-Brother\android-mobile'
 
 验证状态：
 
-- `v2.11` 正式版本的 `:app:compileDebugKotlin --no-daemon` 已通过；当前未提交的后续改动尚未重新执行 Gradle 编译。
+- 既有 `v2.11` 正式版本的 `:app:compileDebugKotlin --no-daemon` 已通过；本次仅修改文档和 Windows 自动脚本，未执行 Gradle 构建。
 - 编译验证使用的临时 JDK 回环补丁已经删除，项目配置未写入补丁。
 - 本次系统栏修改未生成新 APK。
 - 正式版本仍为 `2.11 / 16`。
