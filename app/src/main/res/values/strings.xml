@@ -1,3 +1,8 @@
 ﻿<resources>
     <string name="app_name">ITT</string>
+    <string name="widget_name">快速计时</string>
+    <string name="widget_description">点击即可开始或结束预设事件的 1×1 桌面小组件</string>
+    <string name="widget_configure_title">设置快速计时小组件</string>
+    <string name="widget_grid_name">快速计时 4×2</string>
+    <string name="widget_grid_description">包含 7 个事件格和 1 个编辑格的 4×2 桌面小组件</string>
 </resources>

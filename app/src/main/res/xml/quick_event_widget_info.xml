@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.bigbrother.mobile.widget.QuickEventWidgetConfigureActivity"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_quick_event"
+    android:minHeight="48dp"
+    android:minWidth="48dp"
+    android:previewLayout="@layout/widget_quick_event"
+    android:resizeMode="none"
+    android:targetCellHeight="1"
+    android:targetCellWidth="1"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

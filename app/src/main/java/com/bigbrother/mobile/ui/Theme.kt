@@ -1,7 +1,7 @@
 ﻿package com.bigbrother.mobile.ui
 
 import android.app.Activity
-import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -9,14 +9,14 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.core.view.WindowCompat
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.FontScaleMode
 import com.bigbrother.mobile.data.ThemeMode
@@ -43,8 +43,21 @@ fun BigBrotherTheme(
     }
     val activity = context as? Activity
     SideEffect {
-        activity?.window?.statusBarColor = colorScheme.background.toArgb()
-        activity?.window?.navigationBarColor = colorScheme.surface.toArgb()
+        activity?.window?.let { window ->
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = AndroidColor.TRANSPARENT
+            window.navigationBarColor = AndroidColor.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.navigationBarDividerColor = AndroidColor.TRANSPARENT
+            }
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
     val density = LocalDensity.current
     val fontScale = when (settings.fontScaleMode) {
@@ -65,4 +78,3 @@ fun BigBrotherTheme(
         )
     }
 }
-

@@ -43,6 +43,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val records = repository.records.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val settings = repository.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+    val onboardingCompleted = repository.onboardingCompleted
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _selectedTab = MutableStateFlow(AppTab.Home)
     val selectedTab: StateFlow<AppTab> = _selectedTab.asStateFlow()
@@ -67,6 +69,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectTab(tab: AppTab) {
         _selectedTab.value = tab
+    }
+
+    fun completeOnboarding() {
+        viewModelScope.launch { repository.setOnboardingCompleted(true) }
     }
 
     fun setStatsRange(range: StatsRangeKind) {

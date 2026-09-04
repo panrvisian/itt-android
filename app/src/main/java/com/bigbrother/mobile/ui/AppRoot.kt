@@ -13,9 +13,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -80,6 +81,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -92,6 +94,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -99,7 +103,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -151,6 +158,46 @@ import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+private data class OnboardingStep(
+    val tab: AppTab,
+    val title: String,
+    val description: String,
+    val highlightHeight: Dp
+)
+
+private val onboardingSteps = listOf(
+    OnboardingStep(
+        tab = AppTab.Home,
+        title = "首页：开始与结束计时",
+        description = "短按事件卡片可以管理事件，长按 0.5 秒开始计时。正在进行中的记录会显示在首页，长按记录即可结束计时。",
+        highlightHeight = 320.dp
+    ),
+    OnboardingStep(
+        tab = AppTab.Timeline,
+        title = "时间轴：查看和补录",
+        description = "按日期查看记录，点击色块可以编辑或克隆。顶部可以补录记录，并在比例视图与紧凑视图之间切换。",
+        highlightHeight = 260.dp
+    ),
+    OnboardingStep(
+        tab = AppTab.Notes,
+        title = "备注：集中查看记录说明",
+        description = "这里按日期显示带有文字或图片备注的记录。点击记录可以查看备注，也可以继续编辑。",
+        highlightHeight = 250.dp
+    ),
+    OnboardingStep(
+        tab = AppTab.Stats,
+        title = "统计：查看时间分布",
+        description = "可以切换天、周、月、学期及日期范围。点击分组饼图可查看组内事件占比，下方会显示事件排行。",
+        highlightHeight = 320.dp
+    ),
+    OnboardingStep(
+        tab = AppTab.Settings,
+        title = "设置：外观与数据管理",
+        description = "这里可以调整主题、字号、壁纸等外观选项，并导入或导出备份。以后可在帮助区域重新打开本引导。",
+        highlightHeight = 380.dp
+    )
+)
+
 @Composable
 fun AppRoot(viewModel: MainViewModel) {
     val groups by viewModel.groups.collectAsStateWithLifecycle()
@@ -158,6 +205,7 @@ fun AppRoot(viewModel: MainViewModel) {
     val records by viewModel.records.collectAsStateWithLifecycle()
     val noteImages by viewModel.noteImages.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val onboardingCompleted by viewModel.onboardingCompleted.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val statsRange by viewModel.statsRange.collectAsStateWithLifecycle()
     val statsDate by viewModel.statsDate.collectAsStateWithLifecycle()
@@ -175,6 +223,9 @@ fun AppRoot(viewModel: MainViewModel) {
     var cloningRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteViewRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteEditRecord by remember { mutableStateOf<RecordEntity?>(null) }
+    val onboardingTargets = remember { mutableStateMapOf<AppTab, Rect>() }
+    var onboardingStepIndex by rememberSaveable { mutableIntStateOf(-1) }
+    var onboardingHandledThisSession by rememberSaveable { mutableStateOf(false) }
 
     val visibleGroups = remember(groups) { groups.visibleGroupsForUi() }
     val visibleEvents = remember(events) { events.visibleEventsForUi() }
@@ -212,7 +263,24 @@ fun AppRoot(viewModel: MainViewModel) {
             }
     }
 
-    Scaffold(
+    LaunchedEffect(onboardingCompleted) {
+        if (onboardingCompleted == false && onboardingStepIndex < 0 && !onboardingHandledThisSession) {
+            delay(300)
+            onboardingStepIndex = 0
+        }
+    }
+
+    LaunchedEffect(onboardingStepIndex) {
+        val step = onboardingSteps.getOrNull(onboardingStepIndex) ?: return@LaunchedEffect
+        val page = tabs.indexOf(step.tab)
+        if (page >= 0 && pagerState.currentPage != page) {
+            pagerState.scrollToPage(page)
+        }
+        viewModel.selectTab(step.tab)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar {
@@ -256,7 +324,15 @@ fun AppRoot(viewModel: MainViewModel) {
                     pageSpacing = 0.dp,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
-                    when (tabs[page]) {
+                    val tab = tabs[page]
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned { coordinates ->
+                                onboardingTargets[tab] = coordinates.boundsInRoot()
+                            }
+                    ) {
+                        when (tab) {
                 AppTab.Home -> HomeScreen(
                     viewModel = viewModel,
                     settings = settings,
@@ -299,10 +375,46 @@ fun AppRoot(viewModel: MainViewModel) {
                     onDateChange = viewModel::setNotesDate,
                     onOpen = openNote
                 )
-                        AppTab.Settings -> SettingsScreen(viewModel = viewModel, settings = settings)
+                        AppTab.Settings -> SettingsScreen(
+                            viewModel = viewModel,
+                            settings = settings,
+                            onRestartOnboarding = {
+                                onboardingHandledThisSession = false
+                                onboardingStepIndex = 0
+                            }
+                        )
+                        }
                     }
                 }
             }
+        }
+        }
+
+        val onboardingStep = onboardingSteps.getOrNull(onboardingStepIndex)
+        if (onboardingStep != null) {
+            OnboardingOverlay(
+                step = onboardingStep,
+                stepIndex = onboardingStepIndex,
+                stepCount = onboardingSteps.size,
+                target = onboardingTargets[onboardingStep.tab],
+                onSkip = {
+                    onboardingHandledThisSession = true
+                    onboardingStepIndex = -1
+                    viewModel.completeOnboarding()
+                },
+                onPrevious = {
+                    onboardingStepIndex = (onboardingStepIndex - 1).coerceAtLeast(0)
+                },
+                onNext = {
+                    if (onboardingStepIndex >= onboardingSteps.lastIndex) {
+                        onboardingHandledThisSession = true
+                        onboardingStepIndex = -1
+                        viewModel.completeOnboarding()
+                    } else {
+                        onboardingStepIndex += 1
+                    }
+                }
+            )
         }
     }
 
@@ -459,6 +571,123 @@ fun AppRoot(viewModel: MainViewModel) {
             viewModel = viewModel,
             onDismiss = { noteEditRecord = null }
         )
+    }
+}
+
+@Composable
+private fun OnboardingOverlay(
+    step: OnboardingStep,
+    stepIndex: Int,
+    stepCount: Int,
+    target: Rect?,
+    onSkip: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+    val density = LocalDensity.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val scrimColor = Color.Black.copy(alpha = 0.72f)
+    val outlineColor = MaterialTheme.colorScheme.primary
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {}
+            )
+    ) {
+        val overlayWidth = with(density) { maxWidth.toPx() }
+        val overlayHeight = with(density) { maxHeight.toPx() }
+        val inset = with(density) { 10.dp.toPx() }
+        val minimumHeight = with(density) { 72.dp.toPx() }
+        val cardReserve = with(density) { 250.dp.toPx() }
+        val targetLeft = target?.left ?: inset
+        val targetTop = target?.top ?: with(density) { 24.dp.toPx() }
+        val targetRight = target?.right ?: (overlayWidth - inset)
+        val targetBottom = target?.bottom ?: (overlayHeight - cardReserve)
+        val highlightLeft = (targetLeft + inset).coerceIn(0f, overlayWidth)
+        val highlightRight = (targetRight - inset).coerceIn(highlightLeft, overlayWidth)
+        val highlightTop = (targetTop + inset).coerceIn(0f, overlayHeight)
+        val desiredBottom = highlightTop + with(density) { step.highlightHeight.toPx() }
+        val cardLimitedBottom = (overlayHeight - cardReserve).coerceAtLeast(highlightTop + minimumHeight)
+        val minimumBottom = minOf(highlightTop + minimumHeight, overlayHeight)
+        val highlightBottom = minOf(desiredBottom, targetBottom - inset, cardLimitedBottom)
+            .coerceIn(minimumBottom, overlayHeight)
+        val highlight = Rect(highlightLeft, highlightTop, highlightRight, highlightBottom)
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(
+                color = scrimColor,
+                topLeft = Offset.Zero,
+                size = Size(size.width, highlight.top.coerceAtLeast(0f))
+            )
+            drawRect(
+                color = scrimColor,
+                topLeft = Offset(0f, highlight.bottom.coerceAtMost(size.height)),
+                size = Size(size.width, (size.height - highlight.bottom).coerceAtLeast(0f))
+            )
+            drawRect(
+                color = scrimColor,
+                topLeft = Offset(0f, highlight.top),
+                size = Size(highlight.left.coerceAtLeast(0f), highlight.height.coerceAtLeast(0f))
+            )
+            drawRect(
+                color = scrimColor,
+                topLeft = Offset(highlight.right.coerceAtMost(size.width), highlight.top),
+                size = Size((size.width - highlight.right).coerceAtLeast(0f), highlight.height.coerceAtLeast(0f))
+            )
+            drawRoundRect(
+                color = outlineColor,
+                topLeft = highlight.topLeft,
+                size = highlight.size,
+                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
+                style = Stroke(width = 3.dp.toPx())
+            )
+        }
+
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "${stepIndex + 1} / $stepCount",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = step.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = step.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onSkip) { Text("跳过") }
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (stepIndex > 0) {
+                        TextButton(onClick = onPrevious) { Text("上一步") }
+                    }
+                    Button(onClick = onNext) {
+                        Text(if (stepIndex == stepCount - 1) "完成" else "下一步")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1343,7 +1572,8 @@ private fun formatPercentage(part: Duration, total: Duration): String {
 @Composable
 private fun SettingsScreen(
     viewModel: MainViewModel,
-    settings: AppSettings
+    settings: AppSettings,
+    onRestartOnboarding: () -> Unit
 ) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) viewModel.exportCsv(uri)
@@ -1522,6 +1752,23 @@ private fun SettingsScreen(
                     selectedIndex = listOf(16, 18, 20, 24).indexOf(settings.semesterWeeks).coerceAtLeast(0),
                     onSelected = { viewModel.setSemesterWeeks(listOf(16, 18, 20, 24)[it]) }
                 )
+            }
+        }
+        item {
+            SectionCard(title = "帮助") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("新手引导")
+                        Text(
+                            "重新查看首页、时间轴、备注、统计和设置的功能说明",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = onRestartOnboarding) { Text("查看") }
+                }
             }
         }
         item {
@@ -3206,7 +3453,8 @@ private fun TimelineDayView(
             }
         }
     }
-}@Composable
+}
+@Composable
 private fun TimelineRecordBlock(
     item: TimelineRecordUi,
     settings: AppSettings,

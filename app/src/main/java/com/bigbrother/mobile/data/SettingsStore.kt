@@ -1,4 +1,4 @@
-﻿package com.bigbrother.mobile.data
+package com.bigbrother.mobile.data
 
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -21,6 +21,15 @@ class SettingsStore(private val context: Context) {
     private val ds = context.settingsDataStore
 
     val flow: Flow<AppSettings> = ds.data.map { pref -> pref.toSettings() }
+    val onboardingCompleted: Flow<Boolean> = ds.data.map { pref ->
+        pref[booleanPreferencesKey(KEY_ONBOARDING_COMPLETED)] ?: false
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        ds.edit { pref ->
+            pref[booleanPreferencesKey(KEY_ONBOARDING_COMPLETED)] = completed
+        }
+    }
 
     suspend fun update(block: (AppSettings) -> AppSettings) {
         ds.edit { pref ->
@@ -168,5 +177,6 @@ class SettingsStore(private val context: Context) {
         private const val KEY_WALLPAPER_LANDSCAPE_OFFSET_X = "wallpaper_landscape_offset_x"
         private const val KEY_WALLPAPER_LANDSCAPE_OFFSET_Y = "wallpaper_landscape_offset_y"
         private const val KEY_COMPONENT_ALPHA = "component_alpha"
+        private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
     }
 }
