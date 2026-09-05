@@ -77,6 +77,7 @@ import com.bigbrother.mobile.R
 import com.bigbrother.mobile.data.NoteViewState
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.domain.TimeUtils
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -98,7 +99,7 @@ fun NotesScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = 16.dp,
@@ -235,7 +236,7 @@ fun NoteViewDialog(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(
-                modifier = Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()).overScrollVertical(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (state.text.isNotBlank()) {

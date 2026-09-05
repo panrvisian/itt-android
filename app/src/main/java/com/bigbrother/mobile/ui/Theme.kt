@@ -110,7 +110,12 @@ fun BigBrotherTheme(
             surfaceContainerHighest = Color(0xFFE0E0E6),
             onBackground = Color(0xFF000000),
             onSurface = Color(0xFF000000),
+            onSurfaceContainer = Color(0xFF000000),
             onSurfaceContainerVariant = Color(0xFF8C8C8E),
+            secondaryContainer = Color(0xFFE5E5EA),
+            onSecondaryContainer = Color(0xFF000000),
+            primaryContainer = Color(0xFFD3E3FD),
+            onPrimaryContainer = Color(0xFF041E49),
             outline = Color(0xFFE5E5EA),
             dividerLine = Color(0xFFE0E0E6),
             primary = accentColor ?: Color(0xFF3482FF),
@@ -127,7 +132,14 @@ fun BigBrotherTheme(
             surfaceContainerHighest = Color(0xFF3A3A3C),
             onBackground = Color(0xFFF2F2F2),
             onSurface = Color(0xFFF2F2F2),
+            onSurfaceContainer = Color(0xFFF2F2F2),
             onSurfaceContainerVariant = Color(0xFF8E8E93),
+            secondaryContainer = Color(0xFF2C2C2E),
+            onSecondaryContainer = Color(0xFFF2F2F2),
+            primaryContainer = Color(0xFF1E3A5F),
+            onPrimaryContainer = Color(0xFFD3E3FD),
+            tertiaryContainer = Color(0xFF2C2C2E),
+            onTertiaryContainer = Color(0xFFF2F2F2),
             outline = Color(0xFF2C2C2E),
             dividerLine = Color(0xFF2C2C2E),
             primary = accentColor ?: Color(0xFF277AF7),
@@ -228,9 +240,13 @@ fun BigBrotherTheme(
             MaterialTheme(
                 colorScheme = colorScheme,
                 typography = typography,
-                shapes = shapes,
-                content = content
-            )
+                shapes = shapes
+            ) {
+                CompositionLocalProvider(
+                    androidx.compose.material3.LocalContentColor provides colorScheme.onSurface,
+                    content = content
+                )
+            }
         }
     }
 }

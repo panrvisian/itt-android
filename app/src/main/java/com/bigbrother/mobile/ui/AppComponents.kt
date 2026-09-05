@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,33 +76,38 @@ fun SectionCard(
         alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
     )
     val cardContent: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val titleModifier = if (onTitleClick != null || onTitleLongPress != null) {
-                    Modifier.weight(1f).pointerInput(title, onTitleClick, onTitleLongPress) {
-                        detectTapGestures(
-                            onTap = { onTitleClick?.invoke() },
-                            onLongPress = { onTitleLongPress?.invoke() }
-                        )
+        CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val titleModifier = if (onTitleClick != null || onTitleLongPress != null) {
+                        Modifier.weight(1f).pointerInput(title, onTitleClick, onTitleLongPress) {
+                            detectTapGestures(
+                                onTap = { onTitleClick?.invoke() },
+                                onLongPress = { onTitleLongPress?.invoke() }
+                            )
+                        }
+                    } else {
+                        Modifier.weight(1f)
                     }
-                } else {
-                    Modifier.weight(1f)
+                    Text(
+                        title,
+                        style = titleStyle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = titleModifier,
+                        textAlign = titleAlign,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    trailing?.invoke()
                 }
-                Text(
-                    title,
-                    style = titleStyle,
-                    modifier = titleModifier,
-                    textAlign = titleAlign,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                trailing?.invoke()
+                Spacer(modifier = Modifier.height(12.dp))
+                content()
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            content()
         }
     }
     if (LocalUiStyle.current == UiStyle.Miuix) {
@@ -313,7 +319,12 @@ fun ChoiceChipRow(
                 selected = index == selectedIndex,
                 onClick = { onSelected(index) },
                 label = { Text(label) },
-                colors = FilterChipDefaults.filterChipColors()
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    labelColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         }
     }
