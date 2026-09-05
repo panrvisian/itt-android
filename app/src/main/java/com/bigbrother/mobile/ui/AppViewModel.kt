@@ -168,6 +168,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setSettings { it.copy(uiStyle = style) } }
     }
 
+    fun setMonetEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(monetEnabled = enabled) } }
+    }
+
+    fun setAccentColor(colorArgb: Int?) {
+        viewModelScope.launch { repository.setSettings { it.copy(accentColorArgb = colorArgb) } }
+    }
+
     fun setFloatingBottomBarEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setSettings { it.copy(floatingBottomBarEnabled = enabled) } }
     }

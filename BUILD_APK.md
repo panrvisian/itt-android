@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- JDK 17
+- JDK 21
 - Android SDK Platform 34
 - Android SDK Build Tools 34.0.0
 - Android SDK Platform-Tools（包含 `adb`）
@@ -17,7 +17,7 @@ Android Studio 可以直接打开项目并等待 Gradle 同步。命令行构建
 以下路径仅为格式示例，请替换为本机路径：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
@@ -45,7 +45,7 @@ app\build\outputs\apk\debug\app-debug.apk
 
 ## 常见问题
 
-- **找不到 Java**：确认 `JAVA_HOME` 指向包含 `bin\java.exe` 的 JDK 17 根目录。
+- **找不到 Java**：确认 `JAVA_HOME` 指向包含 `bin\java.exe` 的 JDK 21 根目录。
 - **找不到 Android SDK 或 adb**：确认 `ANDROID_SDK_ROOT` / `ANDROID_HOME` 指向 SDK 根目录，并在 SDK Manager 中安装 Platform-Tools。
 - **项目目录中的 `local.properties`**：这是本机配置文件，不提交到 Git；如果存在且有效，脚本会优先读取其中的 `sdk.dir`。
 - **PowerShell 禁止运行脚本**：可使用 `auto_install\start-menu.bat`，或在当前用户范围调整执行策略后再运行 PowerShell 脚本。

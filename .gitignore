@@ -1,6 +1,10 @@
 # Gradle
 .gradle/
+.kotlin/
 **/build/
+
+# Local Codex task artifacts
+.artifacts/
 
 # Local configuration
 local.properties

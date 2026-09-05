@@ -6,8 +6,8 @@
 
 - 项目路径：`F:\Projects\itt-android`
 - 应用：ITT（Individual Time Trial）
-- 技术栈：Kotlin、Jetpack Compose Material3、Room、DataStore、ViewModel + Repository、Haze
-- Android 配置：applicationId `com.bigbrother.mobile`，minSdk 31，targetSdk 34，compileSdk 34
+- 技术栈：Kotlin、Jetpack Compose Material3、MiuiX、Room、DataStore、ViewModel + Repository
+- Android 配置：applicationId `com.bigbrother.mobile`，minSdk 31，targetSdk 37，compileSdk 37
 - 当前正式版本：`versionName = "2.11"`，`versionCode = 16`
 - 当前开发分支：`ui`，基于 `main` 的 `78a1963`
 - UI 改动只在 `ui` 分支提交，完成阶段性验收后再通过 Pull Request 合入 `main`
@@ -23,17 +23,17 @@
 
 ## 二、构建环境
 
-- JDK：要求 JDK 17，由当前主机的 `JAVA_HOME` 指向实际安装目录
+- JDK：要求 JDK 21，由当前主机的 `JAVA_HOME` 指向实际安装目录
 - Android SDK：由当前主机的 `ANDROID_SDK_ROOT` 或 `ANDROID_HOME` 指定；也可由 `local.properties` 提供本机路径
-- Gradle Wrapper：8.7
-- Kotlin/JVM 目标：17
-- Compose Compiler Extension：1.5.14
+- Gradle Wrapper：9.7.1
+- Android Gradle Plugin：9.3.2；Kotlin：2.4.10；KSP：2.3.10；Kotlin/JVM 目标：21
+- Compose BOM：2026.08.00；Compose Compiler 使用 Kotlin Compose 插件 2.4.10
 
 常用命令：
 
 ```powershell
 # Replace these examples with paths on the current host when needed.
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
@@ -66,8 +66,8 @@ Set-Location '<repository>\android-mobile'
 - `domain/StatsCalculator.kt`：统计范围、事件统计和分组时长统计
 - `ui/AppViewModel.kt`：界面状态及 Repository 调用入口
 - `ui/AppRoot.kt`：首页、时间轴、统计、设置和主要弹窗
-- `ui/AppBottomBar.kt`：固态 / 悬浮底栏、Monet 选中态和 Haze 背景模糊
-- `ui/LiquidGlassEffect.kt`：Android 13 及以上的 AGSL 轻量折射和高光；Android 12 保留 Haze 磨砂回退
+- `ui/AppBottomBar.kt`：统一使用 MiuiX 固态导航栏或官方示例适配的悬浮液态玻璃导航栏
+- `ui/Miuix*.kt`：基于 Apache-2.0 的 compose-miuix-ui `v0.9.2` / AndroidLiquidGlass 示例，提供底栏阻尼拖动、内容遮罩、Backdrop、折射、色散和高光
 - `ui/NoteScreens.kt`：备注列表、查看和编辑界面
 - `ui/AppComponents.kt`：通用卡片、长按事件块和选择控件
 - `ui/Theme.kt`：主题、字号和全局圆角；`ui/MainActivity.kt`：应用入口
@@ -192,11 +192,13 @@ Set-Location '<repository>\android-mobile'
 
 - 底部导航顺序：首页、时间轴、备注、统计、设置。
 - 设置首页使用接近 KernelSU 的大标题和分组圆角卡片；原“外观”入口已改为“主题设置”，说明文字为“自定义更多主题选项”。
-- 主题设置支持系统、浅色和深色模式，并可选择 Material 或 MiuiX 风格。MiuiX 选项由本项目 Compose 组件实现，未直接引入需要 Kotlin 2.4 / 新版 Compose 的 MiuiX 库。
-- Android 12 及以上统一使用系统原生 `dynamicLightColorScheme` / `dynamicDarkColorScheme` 获取 Monet 色板；没有单独的固定品牌色开关。
-- 底栏可选择“悬浮底栏”或贴合屏幕底部的 Material 固态导航栏；液态玻璃只在悬浮底栏开启时生效。
-- 液态玻璃的实时背景模糊由 Apache-2.0 的 Haze `0.7.3` 提供；Android 13 及以上额外使用 AGSL 做轻量边缘折射和高光，Android 12 自动退化为磨砂模糊。
-- 未复制 KernelSU 或 MiuiX 的源码；KernelSU 仅用于交互结构与视觉方向参考，避免把 GPL 代码带入本项目。
+- 主题设置使用“跟随系统 / 浅色 / 深色”三个横向按钮，并可选择 Material 或 MiuiX 风格；新安装默认 MiuiX，MiuiX `0.9.2` 已作为真实组件和主题依赖接入。
+- Monet 默认开启；未指定强调色时使用系统动态色，指定预设强调色后以该颜色生成主题。关闭 Monet 时隐藏强调色选择并恢复 MiuiX 默认明暗配色。Monet 与强调色设置由 DataStore 持久化并进入 CSV 备份。
+- 底栏可选择悬浮或贴合屏幕底部的 MiuiX 导航栏；液态玻璃默认开启且只在悬浮底栏生效。主页面只能通过底栏切换，`HorizontalPager` 的手势翻页关闭，避免与横向滑杆冲突。
+- 悬浮液态玻璃底栏使用满圆角，以 MiuiX 官方示例的双层内容遮罩实现选中项着色，并使用 `DampedDragAnimation`、组合 Backdrop、模糊、鲜艳度、AGSL lens 和高光完成切换及按压效果；相关适配代码保留 Apache-2.0 来源声明。
+- 没有复制 KernelSU 的 GPL 源码；实现来自 Apache-2.0 的 compose-miuix-ui 示例及其上游 AndroidLiquidGlass，只参考 KernelSU 的集成方式。
+- 悬浮模式下页面完整绘制至系统导航栏，滚动内容额外保留 120dp 底部可达区域，因此内容会真实出现在玻璃后方；固态模式继续由 Scaffold Insets 与系统导航区融合。
+- 字号使用 7 档吸附滑杆，默认跟随系统；其他档位均相对于系统 fontScale 调整，不使用无级缩放。
 - 继续支持自定义字号、壁纸、纯色背景、组件透明度、整页玻璃效果和模糊度。
 - 壁纸的横屏和竖屏缩放、横向偏移、纵向偏移分别保存。
 - 新增或修改界面时需要适配应用内字号和系统字号，避免写死文字区域高度；弹窗长内容应可滚动。
@@ -218,8 +220,8 @@ Set-Location '<repository>\android-mobile'
 
 当前 `ui` 基于 `main` 的 `78a1963`，版本号仍为 `v2.11 / 16`。本轮 UI 改动包括：
 
-- 设置页改为 KernelSU 风格的分组卡片二级菜单：主题设置、行为、首页显示、统计、学期设置、导入 / 导出；系统返回在二级页返回设置首页；新手引导是设置首页直接入口。
-- 主题设置页新增 Material / MiuiX、悬浮底栏和液态玻璃选项；这些值保存在 DataStore，并进入 CSV 设置备份。
+- 设置页改为 KernelSU 风格的分组卡片二级菜单：主题设置、行为、首页显示、统计、学期设置、导入 / 导出；进入二级页时向左平移，返回时向右平移；系统返回在二级页返回设置首页；新手引导是设置首页直接入口。
+- 主题设置页包含三按钮明暗模式、Material / MiuiX、Monet 与强调色、悬浮底栏和液态玻璃选项；这些值保存在 DataStore，并进入 CSV 设置备份。
 - 壁纸、主题、字体、组件透明度、整页玻璃效果和模糊度仍归入主题设置。透明度界面为 `0%` 不透明、`100%` 全透明；内部 `componentAlpha` 保存实际不透明度，范围 `0..1`。
 - 新增 `AppSettings.glassEffectEnabled`、`wallpaperBlurRadius`，由 `SettingsStore` 持久化和 `AppViewModel` 修改；模糊度为 `0..40dp`，滑块为 `0..100%`，玻璃效果关闭时滑块禁用。
 - 玻璃效果开启后，图片壁纸按设置模糊，主要卡片使用更透明背景和细边框。
@@ -229,8 +231,7 @@ Set-Location '<repository>\android-mobile'
 
 验证状态：
 
-- `:app:compileDebugKotlin` 已通过，Debug APK 已安装到 Android 16 / API 37 的 Xiaomi 设备并完成首页、设置和主题页渲染检查。
-- Monet 深浅色、Material / MiuiX 选中态和悬浮液态玻璃底栏均已在真机渲染；继续修改后仍需重新构建并复测固态底栏切换。
+- 当前版本已经由用户确认可构建并正常运行；本次提交按用户要求不再重复执行编译或真机检查。
 - 未推送、未创建 PR 或 Release；版本号保持 `2.11 / 16`。
 ## 七、协作与维护方式
 

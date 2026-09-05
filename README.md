@@ -75,9 +75,10 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 
 - 首次打开时显示遮罩式新手引导，可以跳过
 - 可在设置中重新查看新手引导
-- 设置首页采用分组卡片布局，“主题设置”可切换 Material / MiuiX 界面风格
-- Android 12 及以上使用系统 Monet 动态色板，并随系统、浅色或深色主题切换
-- 底部导航可在固态栏和悬浮栏之间切换；悬浮栏可启用实时模糊与液态玻璃效果
+- 设置首页采用分组卡片布局，二级页面使用平移进入和返回动画；“主题设置”可切换 Material / MiuiX 界面风格
+- 主题可跟随系统或固定浅色、深色；Monet 默认开启，也可选择预设强调色，关闭后恢复 MiuiX 默认配色
+- 底部导航统一使用 MiuiX 方案，可在固态栏和满圆角悬浮栏之间切换；悬浮栏默认启用实时模糊与液态玻璃效果
+- 主页面通过底栏切换，关闭横向手势翻页以避免与设置滑杆冲突
 - 支持边到边显示，适配底部手势导航横条
 - 系统栏会根据当前主题自动调整图标颜色
 
@@ -88,7 +89,7 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 - 数据库：Room 2.6.1（数据库版本 2，含迁移）
 - 偏好存储：DataStore Preferences
 - 架构：ViewModel + Repository
-- 构建：Gradle 8.7 / Android Gradle Plugin 8.5.2 / Kotlin 1.9.24
+- 构建：Gradle 9.7.1 / Android Gradle Plugin 9.3.2 / Kotlin 2.4.10 / KSP 2.3.10
 - 最低系统：Android 12（API 31）
 - 目标 / 编译 SDK：34
 
@@ -101,7 +102,7 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 ## 环境要求
 
 - Windows、Android Studio 或 PowerShell
-- JDK 17
+- JDK 21
 - Android SDK Platform 34
 - Android SDK Build Tools 34.0.0
 - Android SDK Platform-Tools（包含 `adb`）
@@ -116,7 +117,7 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 最小构建命令示例（请替换为本机实际路径）：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
