@@ -304,8 +304,12 @@ fun AppRoot(viewModel: MainViewModel) {
     val scope = rememberCoroutineScope()
     val useFloatingBottomBar = settings.floatingBottomBarEnabled
     val useLiquidGlassBottomBar = useFloatingBottomBar && settings.liquidGlassBottomBarEnabled
+    val surfaceColor = MaterialTheme.colorScheme.surface
     val bottomBarBackdrop = if (useLiquidGlassBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        rememberLayerBackdrop()
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
     } else {
         null
     }
@@ -363,11 +367,7 @@ fun AppRoot(viewModel: MainViewModel) {
             )
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
             CompositionLocalProvider(
                 LocalComponentAlpha provides settings.componentAlpha,
@@ -377,11 +377,14 @@ fun AppRoot(viewModel: MainViewModel) {
                 HorizontalPager(
                     state = pagerState,
                     pageSpacing = 0.dp,
-                    userScrollEnabled = false,
+                    beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
+                    overscrollEffect = null,
+                    userScrollEnabled = true,
                     modifier = Modifier
                         .fillMaxSize()
                         .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
                         .statusBarsPadding()
+                        .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                 ) { page ->
                     val tab = tabs[page]
                     Box(modifier = Modifier.fillMaxSize()) {
