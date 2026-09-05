@@ -87,13 +87,15 @@ class SettingsStore(private val context: Context) {
             },
             wallpaperUri = this[stringPreferencesKey(KEY_WALLPAPER_URI)]?.takeIf { it.isNotBlank() },
             wallpaperSolidColorArgb = this[intPreferencesKey(KEY_WALLPAPER_SOLID_COLOR)] ?: 0xFFFFFFFF.toInt(),
-            wallpaperPortraitScale = this[floatPreferencesKey(KEY_WALLPAPER_PORTRAIT_SCALE)] ?: 1f,
+            wallpaperPortraitScale = (this[floatPreferencesKey(KEY_WALLPAPER_PORTRAIT_SCALE)] ?: 1f).coerceIn(1f, 3f),
             wallpaperPortraitOffsetX = this[floatPreferencesKey(KEY_WALLPAPER_PORTRAIT_OFFSET_X)] ?: 0f,
             wallpaperPortraitOffsetY = this[floatPreferencesKey(KEY_WALLPAPER_PORTRAIT_OFFSET_Y)] ?: 0.08f,
-            wallpaperLandscapeScale = this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_SCALE)] ?: 1f,
+            wallpaperLandscapeScale = (this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_SCALE)] ?: 1f).coerceIn(1f, 3f),
             wallpaperLandscapeOffsetX = this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_OFFSET_X)] ?: 0f,
             wallpaperLandscapeOffsetY = this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_OFFSET_Y)] ?: 0f,
-            componentAlpha = (this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] ?: 0.88f).coerceIn(0.25f, 1f)
+            componentAlpha = (this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] ?: 0.88f).coerceIn(0f, 1f),
+            glassEffectEnabled = this[booleanPreferencesKey(KEY_GLASS_EFFECT)] ?: false,
+            wallpaperBlurRadius = (this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] ?: 22f).coerceIn(0f, 40f)
         )
     }
 
@@ -146,7 +148,9 @@ class SettingsStore(private val context: Context) {
         this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_SCALE)] = settings.wallpaperLandscapeScale
         this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_OFFSET_X)] = settings.wallpaperLandscapeOffsetX
         this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_OFFSET_Y)] = settings.wallpaperLandscapeOffsetY
-        this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] = settings.componentAlpha.coerceIn(0.25f, 1f)
+        this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] = settings.componentAlpha.coerceIn(0f, 1f)
+        this[booleanPreferencesKey(KEY_GLASS_EFFECT)] = settings.glassEffectEnabled
+        this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] = settings.wallpaperBlurRadius.coerceIn(0f, 40f)
     }
 
     companion object {
@@ -177,6 +181,8 @@ class SettingsStore(private val context: Context) {
         private const val KEY_WALLPAPER_LANDSCAPE_OFFSET_X = "wallpaper_landscape_offset_x"
         private const val KEY_WALLPAPER_LANDSCAPE_OFFSET_Y = "wallpaper_landscape_offset_y"
         private const val KEY_COMPONENT_ALPHA = "component_alpha"
+        private const val KEY_GLASS_EFFECT = "glass_effect"
+        private const val KEY_WALLPAPER_BLUR_RADIUS = "wallpaper_blur_radius"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
     }
 }

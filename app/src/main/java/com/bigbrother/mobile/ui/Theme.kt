@@ -1,10 +1,11 @@
-﻿package com.bigbrother.mobile.ui
+package com.bigbrother.mobile.ui
 
 import android.app.Activity
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -16,6 +17,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowCompat
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.FontScaleMode
@@ -74,6 +77,11 @@ fun BigBrotherTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography(),
+            shapes = Shapes(
+                small = RoundedCornerShape(14.dp),
+                medium = RoundedCornerShape(20.dp),
+                large = RoundedCornerShape(28.dp)
+            ),
             content = content
         )
     }

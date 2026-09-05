@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import androidx.annotation.DrawableRes
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -93,12 +95,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
@@ -126,6 +130,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -158,43 +164,51 @@ import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+enum class OnboardingTarget {
+    HomeEvents,
+    TimelineControls,
+    NotesControls,
+    StatsChart,
+    SettingsMenu
+}
+
 private data class OnboardingStep(
     val tab: AppTab,
+    val target: OnboardingTarget,
     val title: String,
-    val description: String,
-    val highlightHeight: Dp
+    val description: String
 )
 
 private val onboardingSteps = listOf(
     OnboardingStep(
         tab = AppTab.Home,
+        target = OnboardingTarget.HomeEvents,
         title = "首页：开始与结束计时",
         description = "短按事件卡片可以管理事件，长按 0.5 秒开始计时。正在进行中的记录会显示在首页，长按记录即可结束计时。",
-        highlightHeight = 320.dp
     ),
     OnboardingStep(
         tab = AppTab.Timeline,
+        target = OnboardingTarget.TimelineControls,
         title = "时间轴：查看和补录",
         description = "按日期查看记录，点击色块可以编辑或克隆。顶部可以补录记录，并在比例视图与紧凑视图之间切换。",
-        highlightHeight = 260.dp
     ),
     OnboardingStep(
         tab = AppTab.Notes,
+        target = OnboardingTarget.NotesControls,
         title = "备注：集中查看记录说明",
         description = "这里按日期显示带有文字或图片备注的记录。点击记录可以查看备注，也可以继续编辑。",
-        highlightHeight = 250.dp
     ),
     OnboardingStep(
         tab = AppTab.Stats,
+        target = OnboardingTarget.StatsChart,
         title = "统计：查看时间分布",
         description = "可以切换天、周、月、学期及日期范围。点击分组饼图可查看组内事件占比，下方会显示事件排行。",
-        highlightHeight = 320.dp
     ),
     OnboardingStep(
         tab = AppTab.Settings,
+        target = OnboardingTarget.SettingsMenu,
         title = "设置：外观与数据管理",
         description = "这里可以调整主题、字号、壁纸等外观选项，并导入或导出备份。以后可在帮助区域重新打开本引导。",
-        highlightHeight = 380.dp
     )
 )
 
@@ -223,9 +237,10 @@ fun AppRoot(viewModel: MainViewModel) {
     var cloningRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteViewRecord by remember { mutableStateOf<RecordEntity?>(null) }
     var noteEditRecord by remember { mutableStateOf<RecordEntity?>(null) }
-    val onboardingTargets = remember { mutableStateMapOf<AppTab, Rect>() }
+    val onboardingTargets = remember { mutableStateMapOf<OnboardingTarget, Rect>() }
     var onboardingStepIndex by rememberSaveable { mutableIntStateOf(-1) }
     var onboardingHandledThisSession by rememberSaveable { mutableStateOf(false) }
+    var onboardingTargetReady by rememberSaveable { mutableStateOf(false) }
 
     val visibleGroups = remember(groups) { groups.visibleGroupsForUi() }
     val visibleEvents = remember(events) { events.visibleEventsForUi() }
@@ -271,12 +286,25 @@ fun AppRoot(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(onboardingStepIndex) {
+        onboardingTargetReady = false
         val step = onboardingSteps.getOrNull(onboardingStepIndex) ?: return@LaunchedEffect
+        onboardingTargets.remove(step.target)
         val page = tabs.indexOf(step.tab)
         if (page >= 0 && pagerState.currentPage != page) {
             pagerState.scrollToPage(page)
         }
         viewModel.selectTab(step.tab)
+    }
+
+    val onboardingStep = onboardingSteps.getOrNull(onboardingStepIndex)
+    val onboardingTarget = onboardingStep?.let { onboardingTargets[it.target] }
+    LaunchedEffect(onboardingStepIndex, onboardingTarget, pagerState.currentPage) {
+        val step = onboardingStep ?: return@LaunchedEffect
+        val page = tabs.indexOf(step.tab)
+        if (pagerState.currentPage == page && onboardingTarget != null) {
+            delay(100)
+            onboardingTargetReady = true
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -317,86 +345,87 @@ fun AppRoot(viewModel: MainViewModel) {
                 .padding(padding)
                 .statusBarsPadding()
         ) {
-            WallpaperBackground(settings = settings)
-            CompositionLocalProvider(LocalComponentAlpha provides settings.componentAlpha) {
+            WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
+            CompositionLocalProvider(
+                LocalComponentAlpha provides settings.componentAlpha,
+                LocalGlassEffect provides settings.glassEffectEnabled
+            ) {
                 HorizontalPager(
                     state = pagerState,
                     pageSpacing = 0.dp,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     val tab = tabs[page]
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onGloballyPositioned { coordinates ->
-                                onboardingTargets[tab] = coordinates.boundsInRoot()
-                            }
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         when (tab) {
-                AppTab.Home -> HomeScreen(
-                    viewModel = viewModel,
-                    settings = settings,
-                    groups = visibleGroups,
-                    events = visibleEvents,
-                    eventsByGroup = eventsByGroup,
-                    eventRecordCounts = eventRecordCounts,
-                    records = records,
-                    onEventClick = { selectedEvent = it },
-                    onRecordClick = { selectedRecord = it },
-                    onRecordEnd = { viewModel.endRecord(it.id) },
-                    onAddEventForGroup = { groupId ->
-                        showAddEventGroupId = groupId
-                        showAddEvent = true
-                    },
-                    onAddGroup = { showAddGroup = true },
-                    onGroupLongPress = { selectedGroup = it }
-                )
-                AppTab.Timeline -> TimelineScreen(
-                    viewModel = viewModel,
-                    settings = settings,
-                    records = records,
-                    notedRecordIds = notedRecordIds,
-                    onRecordClick = { selectedRecord = it },
-                    onAddManualRecord = { manualRecordDate = it }
-                )
-                AppTab.Stats -> StatsScreen(
-                    settings = settings,
-                    events = visibleEvents,
-                    records = records,
-                    range = statsRange,
-                    date = statsDate,
-                    onRangeChange = viewModel::setStatsRange,
-                    onDateChange = viewModel::setStatsDate
-                )
-                AppTab.Notes -> NotesScreen(
-                    notedRecords = notedRecords,
-                    imageRecordIds = imageRecordIds,
-                    date = notesDate,
-                    onDateChange = viewModel::setNotesDate,
-                    onOpen = openNote
-                )
-                        AppTab.Settings -> SettingsScreen(
-                            viewModel = viewModel,
-                            settings = settings,
-                            onRestartOnboarding = {
-                                onboardingHandledThisSession = false
-                                onboardingStepIndex = 0
-                            }
-                        )
+                            AppTab.Home -> HomeScreen(
+                                viewModel = viewModel,
+                                settings = settings,
+                                groups = visibleGroups,
+                                events = visibleEvents,
+                                eventsByGroup = eventsByGroup,
+                                eventRecordCounts = eventRecordCounts,
+                                records = records,
+                                onEventClick = { selectedEvent = it },
+                                onRecordClick = { selectedRecord = it },
+                                onRecordEnd = { viewModel.endRecord(it.id) },
+                                onAddEventForGroup = { groupId ->
+                                    showAddEventGroupId = groupId
+                                    showAddEvent = true
+                                },
+                                onAddGroup = { showAddGroup = true },
+                                onGroupLongPress = { selectedGroup = it },
+                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                            )
+                            AppTab.Timeline -> TimelineScreen(
+                                viewModel = viewModel,
+                                settings = settings,
+                                records = records,
+                                notedRecordIds = notedRecordIds,
+                                onRecordClick = { selectedRecord = it },
+                                onAddManualRecord = { manualRecordDate = it },
+                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                            )
+                            AppTab.Stats -> StatsScreen(
+                                settings = settings,
+                                events = visibleEvents,
+                                records = records,
+                                range = statsRange,
+                                date = statsDate,
+                                onRangeChange = viewModel::setStatsRange,
+                                onDateChange = viewModel::setStatsDate,
+                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                            )
+                            AppTab.Notes -> NotesScreen(
+                                notedRecords = notedRecords,
+                                imageRecordIds = imageRecordIds,
+                                date = notesDate,
+                                onDateChange = viewModel::setNotesDate,
+                                onOpen = openNote,
+                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                            )
+                            AppTab.Settings -> SettingsScreen(
+                                viewModel = viewModel,
+                                settings = settings,
+                                onRestartOnboarding = {
+                                    onboardingHandledThisSession = false
+                                    onboardingStepIndex = 0
+                                },
+                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                            )
                         }
                     }
                 }
             }
         }
         }
-
-        val onboardingStep = onboardingSteps.getOrNull(onboardingStepIndex)
-        if (onboardingStep != null) {
+val onboardingStep = onboardingSteps.getOrNull(onboardingStepIndex)
+        if (onboardingStep != null && onboardingTargetReady && onboardingTarget != null) {
             OnboardingOverlay(
                 step = onboardingStep,
                 stepIndex = onboardingStepIndex,
                 stepCount = onboardingSteps.size,
-                target = onboardingTargets[onboardingStep.tab],
+                target = onboardingTarget,
                 onSkip = {
                     onboardingHandledThisSession = true
                     onboardingStepIndex = -1
@@ -579,7 +608,7 @@ private fun OnboardingOverlay(
     step: OnboardingStep,
     stepIndex: Int,
     stepCount: Int,
-    target: Rect?,
+    target: Rect,
     onSkip: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit
@@ -600,72 +629,95 @@ private fun OnboardingOverlay(
     ) {
         val overlayWidth = with(density) { maxWidth.toPx() }
         val overlayHeight = with(density) { maxHeight.toPx() }
-        val inset = with(density) { 10.dp.toPx() }
-        val minimumHeight = with(density) { 72.dp.toPx() }
-        val cardReserve = with(density) { 250.dp.toPx() }
-        val targetLeft = target?.left ?: inset
-        val targetTop = target?.top ?: with(density) { 24.dp.toPx() }
-        val targetRight = target?.right ?: (overlayWidth - inset)
-        val targetBottom = target?.bottom ?: (overlayHeight - cardReserve)
-        val highlightLeft = (targetLeft + inset).coerceIn(0f, overlayWidth)
-        val highlightRight = (targetRight - inset).coerceIn(highlightLeft, overlayWidth)
-        val highlightTop = (targetTop + inset).coerceIn(0f, overlayHeight)
-        val desiredBottom = highlightTop + with(density) { step.highlightHeight.toPx() }
-        val cardLimitedBottom = (overlayHeight - cardReserve).coerceAtLeast(highlightTop + minimumHeight)
-        val minimumBottom = minOf(highlightTop + minimumHeight, overlayHeight)
-        val highlightBottom = minOf(desiredBottom, targetBottom - inset, cardLimitedBottom)
-            .coerceIn(minimumBottom, overlayHeight)
-        val highlight = Rect(highlightLeft, highlightTop, highlightRight, highlightBottom)
+        val padding = with(density) { 8.dp.toPx() }
+        val highlight = Rect(
+            left = (target.left - padding).coerceIn(0f, overlayWidth),
+            top = (target.top - padding).coerceIn(0f, overlayHeight),
+            right = (target.right + padding).coerceIn(0f, overlayWidth),
+            bottom = (target.bottom + padding).coerceIn(0f, overlayHeight)
+        )
+        val cardAtTop = highlight.bottom > overlayHeight * 0.62f
+        val cardModifier = if (cardAtTop) {
+            Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp, vertical = 20.dp)
+        } else {
+            Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 20.dp)
+        }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(scrimColor, topLeft = Offset.Zero, size = Size(size.width, highlight.top))
             drawRect(
-                color = scrimColor,
-                topLeft = Offset.Zero,
-                size = Size(size.width, highlight.top.coerceAtLeast(0f))
-            )
-            drawRect(
-                color = scrimColor,
-                topLeft = Offset(0f, highlight.bottom.coerceAtMost(size.height)),
+                scrimColor,
+                topLeft = Offset(0f, highlight.bottom),
                 size = Size(size.width, (size.height - highlight.bottom).coerceAtLeast(0f))
             )
             drawRect(
-                color = scrimColor,
+                scrimColor,
                 topLeft = Offset(0f, highlight.top),
-                size = Size(highlight.left.coerceAtLeast(0f), highlight.height.coerceAtLeast(0f))
+                size = Size(highlight.left, highlight.height.coerceAtLeast(0f))
             )
             drawRect(
-                color = scrimColor,
-                topLeft = Offset(highlight.right.coerceAtMost(size.width), highlight.top),
+                scrimColor,
+                topLeft = Offset(highlight.right, highlight.top),
                 size = Size((size.width - highlight.right).coerceAtLeast(0f), highlight.height.coerceAtLeast(0f))
             )
             drawRoundRect(
                 color = outlineColor,
                 topLeft = highlight.topLeft,
                 size = highlight.size,
-                cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
                 style = Stroke(width = 3.dp.toPx())
             )
         }
 
         Card(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            modifier = cardModifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+            )
         ) {
             Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "${stepIndex + 1} / $stepCount",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "功能引导",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${stepIndex + 1} / $stepCount",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    repeat(stepCount) { index ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(MaterialTheme.shapes.small)
+                                .background(
+                                    if (index <= stepIndex) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                        )
+                    }
+                }
                 Text(
                     text = step.title,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
@@ -690,7 +742,6 @@ private fun OnboardingOverlay(
         }
     }
 }
-
 @Composable
 private fun HomeScreen(
     viewModel: MainViewModel,
@@ -705,7 +756,8 @@ private fun HomeScreen(
     onRecordEnd: (RecordEntity) -> Unit,
     onAddEventForGroup: (String?) -> Unit,
     onAddGroup: () -> Unit,
-    onGroupLongPress: (GroupEntity) -> Unit
+    onGroupLongPress: (GroupEntity) -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
     val favorites = remember(events) { events.filter { it.isFavorite && !it.isDeleted } }
@@ -716,7 +768,14 @@ private fun HomeScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
     ) {
         if (settings.showClockSection) {
-            item { CurrentTimeSection(settings = settings) }
+            item {
+                CurrentTimeSection(
+                    settings = settings,
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        onRegisterOnboardingTarget(OnboardingTarget.HomeEvents, coordinates.boundsInRoot())
+                    }
+                )
+            }
         }
         if (settings.showRunningSection) {
             item {
@@ -765,9 +824,10 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun CurrentTimeSection(settings: AppSettings) {
+private fun CurrentTimeSection(settings: AppSettings, modifier: Modifier = Modifier) {
     val now = produceClock()
     SectionCard(
+        modifier = modifier,
         title = "Individual Time Trial",
         titleStyle = MaterialTheme.typography.headlineMedium,
         titleAlign = TextAlign.Center
@@ -909,7 +969,10 @@ private fun GroupSection(
     if (!expanded) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)
+            )
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -975,7 +1038,8 @@ private fun TimelineScreen(
     records: List<RecordEntity>,
     notedRecordIds: Set<String>,
     onRecordClick: (RecordEntity) -> Unit,
-    onAddManualRecord: (LocalDate) -> Unit
+    onAddManualRecord: (LocalDate) -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val day by viewModel.timelineDate.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
@@ -989,6 +1053,9 @@ private fun TimelineScreen(
     ) {
         item {
             SectionCard(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
+                },
                 title = "日期",
                 trailing = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1102,7 +1169,8 @@ private fun StatsScreen(
     range: StatsRangeKind,
     date: LocalDate,
     onRangeChange: (StatsRangeKind) -> Unit,
-    onDateChange: (LocalDate) -> Unit
+    onDateChange: (LocalDate) -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val selectedGroupIdState = rememberSaveable { mutableStateOf("") }
@@ -1164,6 +1232,7 @@ private fun StatsScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)
                 )
@@ -1260,6 +1329,9 @@ private fun StatsScreen(
         }
         item {
             SectionCard(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    onRegisterOnboardingTarget(OnboardingTarget.StatsChart, coordinates.boundsInRoot())
+                },
                 title = selectedGroup?.let { "分组时间占比 · ${it.groupName}" } ?: "分组时间占比",
                 trailing = {
                     if (selectedGroup != null) {
@@ -1569,11 +1641,37 @@ private fun formatPercentage(part: Duration, total: Duration): String {
     val percentage = part.toMillis().toDouble() * 100.0 / totalMillis.toDouble()
     return java.lang.String.format(java.util.Locale.getDefault(), "%.1f%%", percentage)
 }
+private enum class SettingsPage {
+    Main,
+    Appearance,
+    Behavior,
+    HomeDisplay,
+    Statistics,
+    Semester,
+    Data
+}
+
+private data class SettingsMenuEntry(
+    val page: SettingsPage,
+    val title: String,
+    val summary: String
+)
+
+private val settingsMenuEntries = listOf(
+    SettingsMenuEntry(SettingsPage.Appearance, "外观", "主题、字体、壁纸、透明度和玻璃效果"),
+    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充"),
+    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局"),
+    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径"),
+    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数"),
+    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移")
+)
+
 @Composable
 private fun SettingsScreen(
     viewModel: MainViewModel,
     settings: AppSettings,
-    onRestartOnboarding: () -> Unit
+    onRestartOnboarding: () -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) viewModel.exportCsv(uri)
@@ -1591,8 +1689,14 @@ private fun SettingsScreen(
             viewModel.setWallpaperUri(uri.toString())
         }
     }
+    var pageName by rememberSaveable { mutableStateOf(SettingsPage.Main.name) }
     var showSemesterStartDialog by rememberSaveable { mutableStateOf(false) }
     var showWallpaperEditor by rememberSaveable { mutableStateOf(false) }
+    val page = SettingsPage.values().firstOrNull { it.name == pageName } ?: SettingsPage.Main
+    if (page != SettingsPage.Main) {
+        BackHandler { pageName = SettingsPage.Main.name }
+    }
+
     if (showWallpaperEditor) {
         WallpaperEditorDialog(
             settings = settings,
@@ -1613,179 +1717,346 @@ private fun SettingsScreen(
         )
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
-    ) {
-        item {
-            SectionCard(title = "外观") {
-                Text("主题")
-                ChoiceChipRow(
-                    labels = listOf("跟随系统", "浅色", "深色"),
-                    selectedIndex = when (settings.themeMode) {
-                        ThemeMode.System -> 0
-                        ThemeMode.Light -> 1
-                        ThemeMode.Dark -> 2
-                    },
-                    onSelected = {
-                        viewModel.setThemeMode(
-                            when (it) {
-                                1 -> ThemeMode.Light
-                                2 -> ThemeMode.Dark
-                                else -> ThemeMode.System
-                            }
-                        )
-                    }
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("字体")
-                ChoiceChipRow(
-                    labels = listOf("跟随系统", "小", "中", "大", "特大"),
-                    selectedIndex = when (settings.fontScaleMode) {
-                        FontScaleMode.System -> 0
-                        FontScaleMode.Small -> 1
-                        FontScaleMode.Medium -> 2
-                        FontScaleMode.Large -> 3
-                        FontScaleMode.XLarge -> 4
-                    },
-                    onSelected = {
-                        viewModel.setFontScaleMode(
-                            when (it) {
-                                0 -> FontScaleMode.System
-                                1 -> FontScaleMode.Small
-                                2 -> FontScaleMode.Medium
-                                3 -> FontScaleMode.Large
-                                4 -> FontScaleMode.XLarge
-                                else -> FontScaleMode.Medium
-                            }
-                        )
-                    }
-                )
+    if (page == SettingsPage.Main) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+        ) {
+            item {
+                Text("设置", style = MaterialTheme.typography.headlineSmall)
             }
-        }
-        item {
-            SectionCard(title = "壁纸") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        val wallpaperLabel = when (settings.wallpaperMode) {
-                            WallpaperMode.Default -> "默认黑白纯色"
-                            WallpaperMode.Image -> "自选图片"
-                            WallpaperMode.Solid -> "纯色"
-                        }
-                        Text("当前：$wallpaperLabel")
-                        Text("\u7EC4\u4EF6\u900F\u660E\u5EA6\uFF1A${(settings.componentAlpha * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Slider(
-                            value = settings.componentAlpha,
-                            onValueChange = { viewModel.setComponentAlpha(it) },
-                            valueRange = 0.25f..1f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    TextButton(onClick = { showWallpaperEditor = true }) { Text("调整壁纸") }
+            settingsMenuEntries.forEach { entry ->
+                item {
+                    SettingsMenuRow(
+                        modifier = if (entry.page == SettingsPage.Appearance) Modifier.onGloballyPositioned { coordinates ->
+                            onRegisterOnboardingTarget(OnboardingTarget.SettingsMenu, coordinates.boundsInRoot())
+                        } else Modifier,
+                        title = entry.title,
+                        summary = entry.summary,
+                        onClick = { pageName = entry.page.name }
+                    )
                 }
             }
-        }
-        item {
-            SectionCard(title = "首页显示") {
-                SettingLine("显示时钟", settings.showClockSection) { viewModel.setShowClockSection(it) }
-                SettingLine("显示进行中", settings.showRunningSection) { viewModel.setShowRunningSection(it) }
-                SettingLine("显示收藏", settings.showFavoriteSection) { viewModel.setShowFavoriteSection(it) }
-                SettingLine("显示分组", settings.showGroupedSection) { viewModel.setShowGroupedSection(it) }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("事件按钮列数")
-                ChoiceChipRow(
-                    labels = listOf("自动", "2", "3", "4"),
-                    selectedIndex = when (settings.eventGridColumns) {
-                        EventGridColumns.Auto -> 0
-                        EventGridColumns.Two -> 1
-                        EventGridColumns.Three -> 2
-                        EventGridColumns.Four -> 3
-                    },
-                    onSelected = {
-                        viewModel.setEventGridColumns(
-                            when (it) {
-                                1 -> EventGridColumns.Two
-                                2 -> EventGridColumns.Three
-                                3 -> EventGridColumns.Four
-                                else -> EventGridColumns.Auto
-                            }
-                        )
-                    }
+            item {
+                SettingsMenuRow(
+                    title = "新手引导",
+                    summary = "重新查看首页、时间轴、备注、统计和设置的功能说明",
+                    onClick = onRestartOnboarding
                 )
             }
         }
-        item {
-            SectionCard(title = "行为") {
-                SettingLine("震动", settings.vibrationEnabled) { viewModel.setVibrationEnabled(it) }
-                SettingLine("时间显示日期", settings.showDateInClock) { viewModel.setShowDateInClock(it) }
-                SettingLine("24 小时制", settings.use24Hour) { viewModel.setUse24Hour(it) }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("收藏自动填充数量：${settings.favoriteAutoFillCount}")
-                ChoiceChipRow(
-                    labels = listOf("4", "6", "8", "12"),
-                    selectedIndex = listOf(4, 6, 8, 12).indexOf(settings.favoriteAutoFillCount).coerceAtLeast(0),
-                    onSelected = { viewModel.setFavoriteAutoFillCount(listOf(4, 6, 8, 12)[it]) }
+    } else {
+        SettingsSubpage(
+            title = when (page) {
+                SettingsPage.Appearance -> "外观"
+                SettingsPage.Behavior -> "行为"
+                SettingsPage.HomeDisplay -> "首页显示"
+                SettingsPage.Statistics -> "统计"
+                SettingsPage.Semester -> "学期设置"
+                SettingsPage.Data -> "导入 / 导出"
+                SettingsPage.Main -> "设置"
+            },
+            onBack = { pageName = SettingsPage.Main.name }
+        ) {
+            when (page) {
+                SettingsPage.Appearance -> AppearanceSettings(
+                    settings = settings,
+                    viewModel = viewModel,
+                    onAdjustWallpaper = { showWallpaperEditor = true }
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("累计口径")
-                ChoiceChipRow(
-                    labels = listOf("累计", "去重"),
-                    selectedIndex = if (settings.totalDurationMode == TotalDurationMode.Sum) 0 else 1,
-                    onSelected = { viewModel.setTotalDurationMode(if (it == 1) TotalDurationMode.Unique else TotalDurationMode.Sum) }
+                SettingsPage.Behavior -> BehaviorSettings(settings = settings, viewModel = viewModel)
+                SettingsPage.HomeDisplay -> HomeDisplaySettings(settings = settings, viewModel = viewModel)
+                SettingsPage.Statistics -> StatisticsSettings(settings = settings, viewModel = viewModel)
+                SettingsPage.Semester -> SemesterSettings(
+                    settings = settings,
+                    viewModel = viewModel,
+                    onChangeStartDate = { showSemesterStartDialog = true }
                 )
-            }
-        }
-        item {
-            SectionCard(title = "学期设置") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("学期第一天")
-                        Text(settings.semesterStartDate.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    TextButton(onClick = { showSemesterStartDialog = true }) { Text("修改") }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("共计周数")
-                ChoiceChipRow(
-                    labels = listOf("16", "18", "20", "24"),
-                    selectedIndex = listOf(16, 18, 20, 24).indexOf(settings.semesterWeeks).coerceAtLeast(0),
-                    onSelected = { viewModel.setSemesterWeeks(listOf(16, 18, 20, 24)[it]) }
+                SettingsPage.Data -> DataSettings(
+                    onExport = { exportLauncher.launch("big_brother_mobile.zip") },
+                    onImportReplace = { importReplaceLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) },
+                    onImportMerge = { importMergeLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) }
                 )
-            }
-        }
-        item {
-            SectionCard(title = "帮助") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("新手引导")
-                        Text(
-                            "重新查看首页、时间轴、备注、统计和设置的功能说明",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    TextButton(onClick = onRestartOnboarding) { Text("查看") }
-                }
-            }
-        }
-        item {
-            SectionCard(title = "导入 / 导出") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    IconTextButton(text = "导出备份", iconRes = R.drawable.ic_export, onClick = { exportLauncher.launch("big_brother_mobile.zip") })
-                    IconTextButton(text = "导入覆盖", iconRes = R.drawable.ic_import, onClick = { importReplaceLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) })
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                IconTextButton(text = "导入合并", iconRes = R.drawable.ic_import, onClick = { importMergeLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) })
+                SettingsPage.Main -> Unit
             }
         }
     }
 }
 
 @Composable
-private fun WallpaperBackground(settings: AppSettings, modifier: Modifier = Modifier) {
+private fun SettingsSubpage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) { Text("‹ 返回") }
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 4.dp))
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)
+        ) {
+            item { content() }
+        }
+    }
+}
+
+@Composable
+private fun SettingsMenuRow(
+    modifier: Modifier = Modifier,
+    title: String,
+    summary: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
+            )
+        ),
+        border = if (LocalGlassEffect.current) {
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
+        } else null
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Text("›", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSettings(
+    settings: AppSettings,
+    viewModel: MainViewModel,
+    onAdjustWallpaper: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "主题") {
+            Text("主题模式")
+            ChoiceChipRow(
+                labels = listOf("跟随系统", "浅色", "深色"),
+                selectedIndex = when (settings.themeMode) {
+                    ThemeMode.System -> 0
+                    ThemeMode.Light -> 1
+                    ThemeMode.Dark -> 2
+                },
+                onSelected = {
+                    viewModel.setThemeMode(
+                        when (it) {
+                            1 -> ThemeMode.Light
+                            2 -> ThemeMode.Dark
+                            else -> ThemeMode.System
+                        }
+                    )
+                }
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("字体")
+            ChoiceChipRow(
+                labels = listOf("跟随系统", "小", "中", "大", "特大"),
+                selectedIndex = when (settings.fontScaleMode) {
+                    FontScaleMode.System -> 0
+                    FontScaleMode.Small -> 1
+                    FontScaleMode.Medium -> 2
+                    FontScaleMode.Large -> 3
+                    FontScaleMode.XLarge -> 4
+                },
+                onSelected = {
+                    viewModel.setFontScaleMode(
+                        when (it) {
+                            0 -> FontScaleMode.System
+                            1 -> FontScaleMode.Small
+                            2 -> FontScaleMode.Medium
+                            3 -> FontScaleMode.Large
+                            4 -> FontScaleMode.XLarge
+                            else -> FontScaleMode.Medium
+                        }
+                    )
+                }
+            )
+        }
+        SectionCard(title = "壁纸") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    val wallpaperLabel = when (settings.wallpaperMode) {
+                        WallpaperMode.Default -> "默认黑白纯色"
+                        WallpaperMode.Image -> "自选图片"
+                        WallpaperMode.Solid -> "纯色"
+                    }
+                    Text("当前：$wallpaperLabel")
+                    Text("可在下方调整组件透明度和效果", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onAdjustWallpaper) { Text("调整壁纸") }
+            }
+        }
+        SectionCard(title = "组件效果") {
+            val transparency = (1f - settings.componentAlpha).coerceIn(0f, 1f)
+            Text("组件透明度：${(transparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Slider(
+                value = transparency,
+                onValueChange = { viewModel.setComponentAlpha(1f - it) },
+                valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth()
+            )
+            SettingSwitchLine("玻璃效果", settings.glassEffectEnabled) { viewModel.setGlassEffectEnabled(it) }
+            val blurPercent = (settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)
+            Text("模糊度：${(blurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Slider(
+                value = blurPercent,
+                onValueChange = { viewModel.setWallpaperBlurRadius(it * 40f) },
+                valueRange = 0f..1f,
+                enabled = settings.glassEffectEnabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("开启后使用半透明界面和背景模糊效果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun BehaviorSettings(settings: AppSettings, viewModel: MainViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "行为") {
+            SettingLine("震动", settings.vibrationEnabled) { viewModel.setVibrationEnabled(it) }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("收藏自动填充数量：${settings.favoriteAutoFillCount}")
+            ChoiceChipRow(
+                labels = listOf("4", "6", "8", "12"),
+                selectedIndex = listOf(4, 6, 8, 12).indexOf(settings.favoriteAutoFillCount).coerceAtLeast(0),
+                onSelected = { viewModel.setFavoriteAutoFillCount(listOf(4, 6, 8, 12)[it]) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeDisplaySettings(settings: AppSettings, viewModel: MainViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "首页显示") {
+            SettingLine("显示时钟", settings.showClockSection) { viewModel.setShowClockSection(it) }
+            SettingLine("显示进行中", settings.showRunningSection) { viewModel.setShowRunningSection(it) }
+            SettingLine("显示收藏", settings.showFavoriteSection) { viewModel.setShowFavoriteSection(it) }
+            SettingLine("显示分组", settings.showGroupedSection) { viewModel.setShowGroupedSection(it) }
+            SettingLine("时间显示日期", settings.showDateInClock) { viewModel.setShowDateInClock(it) }
+            SettingLine("24 小时制", settings.use24Hour) { viewModel.setUse24Hour(it) }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("事件按钮列数")
+            ChoiceChipRow(
+                labels = listOf("自动", "2", "3", "4"),
+                selectedIndex = when (settings.eventGridColumns) {
+                    EventGridColumns.Auto -> 0
+                    EventGridColumns.Two -> 1
+                    EventGridColumns.Three -> 2
+                    EventGridColumns.Four -> 3
+                },
+                onSelected = {
+                    viewModel.setEventGridColumns(
+                        when (it) {
+                            1 -> EventGridColumns.Two
+                            2 -> EventGridColumns.Three
+                            3 -> EventGridColumns.Four
+                            else -> EventGridColumns.Auto
+                        }
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatisticsSettings(settings: AppSettings, viewModel: MainViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "统计") {
+            Text("累计口径")
+            ChoiceChipRow(
+                labels = listOf("累计", "去重"),
+                selectedIndex = if (settings.totalDurationMode == TotalDurationMode.Sum) 0 else 1,
+                onSelected = { viewModel.setTotalDurationMode(if (it == 1) TotalDurationMode.Unique else TotalDurationMode.Sum) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SemesterSettings(
+    settings: AppSettings,
+    viewModel: MainViewModel,
+    onChangeStartDate: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "学期设置") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("学期第一天")
+                    Text(settings.semesterStartDate.toString(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onChangeStartDate) { Text("修改") }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("共计周数")
+            ChoiceChipRow(
+                labels = listOf("16", "18", "20", "24"),
+                selectedIndex = listOf(16, 18, 20, 24).indexOf(settings.semesterWeeks).coerceAtLeast(0),
+                onSelected = { viewModel.setSemesterWeeks(listOf(16, 18, 20, 24)[it]) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DataSettings(
+    onExport: () -> Unit,
+    onImportReplace: () -> Unit,
+    onImportMerge: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "导入 / 导出") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                IconTextButton(text = "导出备份", iconRes = R.drawable.ic_export, onClick = onExport)
+                IconTextButton(text = "导入覆盖", iconRes = R.drawable.ic_import, onClick = onImportReplace)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            IconTextButton(text = "导入合并", iconRes = R.drawable.ic_import, onClick = onImportMerge)
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+@Composable
+private fun WallpaperBackground(
+    settings: AppSettings,
+    glassEffectEnabled: Boolean = false,
+    modifier: Modifier = Modifier
+) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val scale = if (isLandscape) settings.wallpaperLandscapeScale else settings.wallpaperPortraitScale
@@ -1798,23 +2069,38 @@ private fun WallpaperBackground(settings: AppSettings, modifier: Modifier = Modi
         WallpaperMode.Solid -> solidColor
         else -> defaultColor
     }
-    val painter = rememberWallpaperPainter(if (settings.wallpaperMode == WallpaperMode.Image) settings.wallpaperUri else null)
+    val bitmap = rememberWallpaperBitmap(if (settings.wallpaperMode == WallpaperMode.Image) settings.wallpaperUri else null)
+    val blurModifier = if (glassEffectEnabled && settings.wallpaperMode == WallpaperMode.Image && settings.wallpaperBlurRadius > 0f) {
+        Modifier.blur(settings.wallpaperBlurRadius.dp)
+    } else Modifier
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize().background(backgroundColor), contentAlignment = Alignment.Center) {
-        val imagePainter = painter
-        if (settings.wallpaperMode == WallpaperMode.Image && imagePainter != null) {
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize().background(backgroundColor),
+        contentAlignment = Alignment.Center
+    ) {
+        if (settings.wallpaperMode == WallpaperMode.Image && bitmap != null) {
             val density = LocalDensity.current
-            val tx = with(density) { maxWidth.toPx() * offsetX }
-            val ty = with(density) { maxHeight.toPx() * offsetY }
+            val containerWidth = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+            val containerHeight = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+            val imageWidth = bitmap.width.toFloat().coerceAtLeast(1f)
+            val imageHeight = bitmap.height.toFloat().coerceAtLeast(1f)
+            val baseScale = max(containerWidth / imageWidth, containerHeight / imageHeight)
+            val renderedWidth = imageWidth * baseScale * scale.coerceAtLeast(1f)
+            val renderedHeight = imageHeight * baseScale * scale.coerceAtLeast(1f)
+            val maxOffsetX = ((renderedWidth - containerWidth) / 2f).coerceAtLeast(0f)
+            val maxOffsetY = ((renderedHeight - containerHeight) / 2f).coerceAtLeast(0f)
+            val tx = offsetX.coerceIn(-1f, 1f) * maxOffsetX
+            val ty = offsetY.coerceIn(-1f, 1f) * maxOffsetY
             Image(
-                painter = imagePainter,
+                bitmap = bitmap,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillBounds,
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(blurModifier)
                     .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
+                        scaleX = renderedWidth / containerWidth
+                        scaleY = renderedHeight / containerHeight
                         translationX = tx
                         translationY = ty
                     }
@@ -1822,11 +2108,10 @@ private fun WallpaperBackground(settings: AppSettings, modifier: Modifier = Modi
         }
     }
 }
-
 @Composable
-private fun rememberWallpaperPainter(uriString: String?): Painter? {
+private fun rememberWallpaperBitmap(uriString: String?): ImageBitmap? {
     val context = LocalContext.current
-    val imageBitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, uriString) {
+    val imageBitmap by produceState<ImageBitmap?>(null, uriString) {
         value = null
         if (!uriString.isNullOrBlank()) {
             value = withContext(Dispatchers.IO) {
@@ -1838,8 +2123,7 @@ private fun rememberWallpaperPainter(uriString: String?): Painter? {
             }
         }
     }
-    val bitmap = imageBitmap
-    return if (bitmap != null) remember(bitmap) { BitmapPainter(bitmap) } else null
+    return imageBitmap
 }
 @Composable
 private fun WallpaperEditorDialog(
@@ -1930,14 +2214,14 @@ private fun WallpaperEditorDialog(
                                 .pointerInput(isLandscape, settings.wallpaperMode) {
                                     detectTransformGestures { _, pan, zoom, _ ->
                                         if (settings.wallpaperMode == WallpaperMode.Image) {
-                                            scale = (scale * zoom).coerceIn(0.5f, 3f)
-                                            offsetX = (offsetX + pan.x / widthPx).coerceIn(-0.5f, 0.5f)
-                                            offsetY = (offsetY + pan.y / heightPx).coerceIn(-0.5f, 0.5f)
+                                            scale = (scale * zoom).coerceIn(1f, 3f)
+                                            offsetX = (offsetX + pan.x / widthPx).coerceIn(-1f, 1f)
+                                            offsetY = (offsetY + pan.y / heightPx).coerceIn(-1f, 1f)
                                         }
                                     }
                                 }
                         ) {
-                            WallpaperBackground(settings = previewSettings)
+                            WallpaperBackground(settings = previewSettings, glassEffectEnabled = previewSettings.glassEffectEnabled)
                         }
                     }
                 }
@@ -2045,7 +2329,7 @@ private fun SettingLine(title: String, checked: Boolean, onCheckedChange: (Boole
 
 @Composable
 private fun SummaryCard(modifier: Modifier = Modifier, title: String, value: String) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
+    Card(modifier = modifier, shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(6.dp))
@@ -2541,7 +2825,7 @@ private fun ManualRecordDialog(
                     Text("请先创建事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Text("事件")
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
+                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
                         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                             Text("当前选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(4.dp))
@@ -2558,7 +2842,7 @@ private fun ManualRecordDialog(
                         }
                     }
 
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
+                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2946,7 +3230,7 @@ private fun RecordEditorDialog(
                     Text("请先创建事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     Text("事件")
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
+                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
                         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                             Text("当前选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(4.dp))
@@ -2963,7 +3247,7 @@ private fun RecordEditorDialog(
                         }
                     }
 
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
+                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -3608,7 +3892,15 @@ internal fun SimpleDialog(
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.widthIn(min = 280.dp, max = 420.dp),
-            colors = CardDefaults.cardColors(containerColor = containerColor)
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(
+                containerColor = containerColor.copy(
+                    alpha = (containerColor.alpha * if (LocalGlassEffect.current) 0.82f else 1f).coerceIn(0f, 1f)
+                )
+            ),
+            border = if (LocalGlassEffect.current) {
+                androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f))
+            } else null
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 if (titleBackgroundColor != null) {

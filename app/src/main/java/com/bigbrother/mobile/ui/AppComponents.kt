@@ -55,6 +55,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.launch
 
 val LocalComponentAlpha = staticCompositionLocalOf { 1f }
+val LocalGlassEffect = staticCompositionLocalOf { false }
 
 @Composable
 fun SectionCard(
@@ -69,7 +70,15 @@ fun SectionCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
+            )
+        ),
+        border = if (LocalGlassEffect.current) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
+        } else null
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

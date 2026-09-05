@@ -231,7 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.setSettings {
                 it.copy(
-                    wallpaperPortraitScale = scale.coerceIn(0.5f, 3f),
+                    wallpaperPortraitScale = scale.coerceIn(1f, 3f),
                     wallpaperPortraitOffsetX = offsetX.coerceIn(-1f, 1f),
                     wallpaperPortraitOffsetY = offsetY.coerceIn(-1f, 1f)
                 )
@@ -243,7 +243,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.setSettings {
                 it.copy(
-                    wallpaperLandscapeScale = scale.coerceIn(0.5f, 3f),
+                    wallpaperLandscapeScale = scale.coerceIn(1f, 3f),
                     wallpaperLandscapeOffsetX = offsetX.coerceIn(-1f, 1f),
                     wallpaperLandscapeOffsetY = offsetY.coerceIn(-1f, 1f)
                 )
@@ -252,7 +252,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setComponentAlpha(alpha: Float) {
-        viewModelScope.launch { repository.setSettings { it.copy(componentAlpha = alpha.coerceIn(0.25f, 1f)) } }
+        viewModelScope.launch { repository.setSettings { it.copy(componentAlpha = alpha.coerceIn(0f, 1f)) } }
+    }
+
+    fun setGlassEffectEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(glassEffectEnabled = enabled) } }
+    }
+
+    fun setWallpaperBlurRadius(radius: Float) {
+        viewModelScope.launch { repository.setSettings { it.copy(wallpaperBlurRadius = radius.coerceIn(0f, 40f)) } }
     }
 
     fun exportCsv(uri: Uri) {

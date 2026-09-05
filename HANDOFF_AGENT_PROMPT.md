@@ -1,6 +1,6 @@
 # ITT 安卓应用交接说明
 
-> 最近更新：2026-09-04。本文只描述当前有效状态，不作为版本更新日志。沟通使用中文，简明、务实，不用比喻或表情符号。
+> 最近更新：2026-09-05。本文只描述当前有效状态，不作为版本更新日志。
 
 ## 一、项目快照
 
@@ -10,7 +10,7 @@
 - Android 配置：applicationId `com.bigbrother.mobile`，minSdk 31，targetSdk 34，compileSdk 34
 - 当前正式版本：`versionName = "2.11"`，`versionCode = 16`
 - 当前分支：`main`
-- 最新正式提交：本次文档和自动脚本更新提交（以 `git log -1` 为准）
+- 最新已提交 commit：`646cefa`（文档和自动安装脚本跨主机适配）
 - `origin`：`git@github.com:panrvisian/itt-android.git`
 - GitHub 仓库为公开仓库；当前正式标签和 Release 为 `v2.11`
 - 当前分支在 `v2.11` 正式版本之后继续维护；开始工作前先查看 `git status`、`git log -1` 和 `git diff`，不要覆盖已有修改。
@@ -49,12 +49,8 @@ Set-Location '<repository>\android-mobile'
 
 环境注意事项：
 
-- `auto_install/common.ps1` 统一解析 JDK 和 Android SDK；优先读取当前主机环境变量，并兼容有效的 `local.properties`、常见安装目录和 PATH。
-- `auto_install/deploy.ps1`、`auto_install/menu.ps1`、`auto_install/wifi-adb.ps1` 不再写死作者主机的 SDK/JDK/ADB 路径；其他主机按 `AUTO_INSTALL.md` 配置环境变量即可。
-- 构建被中断后若出现无法清理输出目录或 Gradle daemon 已停止，先检查残留的 Gradle/Kotlin Java 进程，只停止确认属于旧构建的进程，再重试。
-- Codex 环境可能出现 `java.io.IOException: Unable to establish loopback connection`。临时处理方式：从当前 JDK 的 `lib/src.zip` 提取 `java.base/sun/nio/ch/PipeImpl.java` 到系统临时目录，将 `this.preferUnixDomain = preferUnixDomain;` 临时改为 `this.preferUnixDomain = false;`，使用 `javac --patch-module java.base=<源码目录> -d <输出目录>` 编译，再仅为本次 Gradle 进程设置 `JAVA_TOOL_OPTIONS=--patch-module=java.base=<输出目录>`。完成后删除临时源码和 class，不修改 `gradle.properties` 或项目脚本。
-- 当前项目没有单元测试或设备测试源码，基础验证以 Kotlin 编译和按需完整构建为主。
-- Git 和 GitHub 操作使用 SSH remote；Codex 沙箱中若因权限或网络隔离失败，需要在真实用户环境中执行。
+- `auto_install/common.ps1` 统一解析 JDK 和 Android SDK；其他主机按 `AUTO_INSTALL.md` 配置环境变量即可。
+- `local.properties`、构建产物和 APK 不提交到 Git。
 
 ## 三、代码与数据结构
 
@@ -72,7 +68,7 @@ Set-Location '<repository>\android-mobile'
 - `ui/AppRoot.kt`：首页、时间轴、统计、设置和主要弹窗
 - `ui/NoteScreens.kt`：备注列表、查看和编辑界面
 - `ui/AppComponents.kt`：通用卡片、长按事件块和选择控件
-- `ui/Theme.kt`：主题和应用内字号；`ui/MainActivity.kt`：应用入口和启动闪屏
+- `ui/Theme.kt`：主题、字号和全局圆角；`ui/MainActivity.kt`：应用入口
 - `widget/`：1×1 和 4×2 桌面小组件
 - `AndroidManifest.xml` 与 `res/xml/file_paths.xml`：拍照备注使用的 FileProvider
 - `auto_install/common.ps1`、`auto_install/deploy.ps1`、`auto_install/menu.ps1`、`auto_install/wifi-adb.ps1`：跨主机工具解析和自动部署
@@ -193,7 +189,7 @@ Set-Location '<repository>\android-mobile'
 ### 8. 外观与导航
 
 - 底部导航顺序：首页、时间轴、备注、统计、设置。
-- 支持系统、浅色和深色主题，自定义字号、壁纸、纯色背景和组件透明度。
+- 支持系统、浅色和深色主题，自定义字号、壁纸、纯色背景、组件透明度、玻璃效果和模糊度。
 - 壁纸的横屏和竖屏缩放、横向偏移、纵向偏移分别保存。
 - 新增或修改界面时需要适配应用内字号和系统字号，避免写死文字区域高度；弹窗长内容应可滚动。
 - 主界面启用 Android 边到边显示，内容可延伸到系统导航栏和手势横条区域，不隐藏手势横条。
@@ -212,29 +208,20 @@ Set-Location '<repository>\android-mobile'
 
 ## 六、当前开发状态
 
-当前 `main` 在 `v2.11` 正式版本基础上包含以下后续维护，版本号仍为 `2.11 / 16`：
+当前 `main` 基于 `v2.11 / 16`，工作区有未提交的设置和外观改动：
 
-1. JDK 与自动脚本维护：
-   - JDK 文档改为主机无关的 JDK 17 配置说明，不再记录某一台电脑的绝对路径。
-   - `auto_install/common.ps1` 统一解析 `JAVA_HOME`、`ANDROID_SDK_ROOT`、`ANDROID_HOME`、`local.properties` 和 PATH；其他主机按 `AUTO_INSTALL.md` 配置即可。
-   - `auto_install/deploy.ps1`、`auto_install/menu.ps1` 和 `auto_install/wifi-adb.ps1` 共用上述解析逻辑。
-2. 首页与统计功能：
-   - 首页事件频率排除跨天记录的续段，每次跨天记录只计算一次。
-   - 统计页支持其他天、周、月的前后导航和日期跳转，天、周、月共用统计基准日期。
-   - 统计页包含分组时间占比饼图，并支持进入分组内事件占比详情及联动事件排行。
-3. 系统栏适配：
-   - 主界面使用边到边显示，系统导航栏透明，关闭导航栏对比度强制和分隔线；根据当前主题切换系统栏图标颜色。
-   - 底部导航和页面底部控件继续依赖 Compose Scaffold 的 Insets 处理，手势横条保持显示。
-4. 交接文档：
-   - `HANDOFF_AGENT_PROMPT.md` 已按当前有效状态整理；修改时应直接更新现有章节，不追加失效历史。
+- 设置页改为二级菜单：外观、行为、首页显示、统计、学期设置、导入 / 导出；系统返回在二级页返回设置首页；新手引导是设置首页直接入口。
+- 壁纸、主题、字体、组件透明度、玻璃效果和模糊度归入“外观”。透明度界面为 `0%` 不透明、`100%` 全透明；内部 `componentAlpha` 保存实际不透明度，范围 `0..1`。
+- 新增 `AppSettings.glassEffectEnabled`、`wallpaperBlurRadius`，由 `SettingsStore` 持久化和 `AppViewModel` 修改；模糊度为 `0..40dp`，滑块为 `0..100%`，玻璃效果关闭时滑块禁用。
+- 玻璃效果开启后，图片壁纸按设置模糊，主要卡片使用更透明背景和细边框。
+- 自选壁纸按实际图片尺寸计算铺满比例，支持拖动和双指缩放取景；缩放下限 `1f`，偏移按可移动范围计算，不留白。
+- `Theme.kt` 全局形状：small `14dp`、medium `20dp`、large `28dp`。
+- 新手引导按具体目标定位：首页时钟区、时间轴日期控件、备注日期控件、统计饼图、设置菜单项；切页后等待目标布局完成再显示，目标不存在不显示遮罩；提示卡按目标位置上下避让。
 
 验证状态：
 
-- 既有 `v2.11` 正式版本的 `:app:compileDebugKotlin --no-daemon` 已通过；本次仅修改文档和 Windows 自动脚本，未执行 Gradle 构建。
-- 编译验证使用的临时 JDK 回环补丁已经删除，项目配置未写入补丁。
-- 本次系统栏修改未生成新 APK。
-- 正式版本仍为 `2.11 / 16`。
-
+- 最近修改后的源码尚未重新编译验证；接续开发前先运行 `:app:compileDebugKotlin`。
+- 未生成 APK、未提交或推送；版本号保持 `2.11 / 16`。
 ## 七、协作与维护方式
 
 - 用户提出文件或代码修改时，先等待用户说“全部说完”，再确认疑问、完整复述计划，得到确认后执行。

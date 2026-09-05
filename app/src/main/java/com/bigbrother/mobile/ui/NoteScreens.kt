@@ -60,6 +60,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
@@ -86,7 +89,8 @@ fun NotesScreen(
     imageRecordIds: Set<String>,
     date: LocalDate,
     onDateChange: (LocalDate) -> Unit,
-    onOpen: (RecordEntity) -> Unit
+    onOpen: (RecordEntity) -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val dayRecords = remember(notedRecords, date) {
@@ -100,6 +104,9 @@ fun NotesScreen(
     ) {
         item {
             SectionCard(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    onRegisterOnboardingTarget(OnboardingTarget.NotesControls, coordinates.boundsInRoot())
+                },
                 title = "日期",
                 trailing = {
                     TextButton(onClick = { showDatePicker = true }) { Text("跳转") }
@@ -171,6 +178,7 @@ private fun NoteListRow(
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)),
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.95f)),
         onClick = onClick
