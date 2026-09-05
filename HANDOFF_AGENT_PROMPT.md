@@ -4,13 +4,13 @@
 
 ## 一、项目快照
 
-- 项目路径：`D:\Administrator\Documents\Big-Brother\android-mobile`
+- 项目路径：`F:\Projects\itt-android`
 - 应用：ITT（Individual Time Trial）
-- 技术栈：Kotlin、Jetpack Compose Material3、Room、DataStore、ViewModel + Repository
+- 技术栈：Kotlin、Jetpack Compose Material3、Room、DataStore、ViewModel + Repository、Haze
 - Android 配置：applicationId `com.bigbrother.mobile`，minSdk 31，targetSdk 34，compileSdk 34
 - 当前正式版本：`versionName = "2.11"`，`versionCode = 16`
-- 当前分支：`main`
-- 最新已提交 commit：`646cefa`（文档和自动安装脚本跨主机适配）
+- 当前开发分支：`ui`，基于 `main` 的 `78a1963`
+- UI 改动只在 `ui` 分支提交，完成阶段性验收后再通过 Pull Request 合入 `main`
 - `origin`：`git@github.com:panrvisian/itt-android.git`
 - GitHub 仓库为公开仓库；当前正式标签和 Release 为 `v2.11`
 - 当前分支在 `v2.11` 正式版本之后继续维护；开始工作前先查看 `git status`、`git log -1` 和 `git diff`，不要覆盖已有修改。
@@ -66,6 +66,8 @@ Set-Location '<repository>\android-mobile'
 - `domain/StatsCalculator.kt`：统计范围、事件统计和分组时长统计
 - `ui/AppViewModel.kt`：界面状态及 Repository 调用入口
 - `ui/AppRoot.kt`：首页、时间轴、统计、设置和主要弹窗
+- `ui/AppBottomBar.kt`：固态 / 悬浮底栏、Monet 选中态和 Haze 背景模糊
+- `ui/LiquidGlassEffect.kt`：Android 13 及以上的 AGSL 轻量折射和高光；Android 12 保留 Haze 磨砂回退
 - `ui/NoteScreens.kt`：备注列表、查看和编辑界面
 - `ui/AppComponents.kt`：通用卡片、长按事件块和选择控件
 - `ui/Theme.kt`：主题、字号和全局圆角；`ui/MainActivity.kt`：应用入口
@@ -189,7 +191,13 @@ Set-Location '<repository>\android-mobile'
 ### 8. 外观与导航
 
 - 底部导航顺序：首页、时间轴、备注、统计、设置。
-- 支持系统、浅色和深色主题，自定义字号、壁纸、纯色背景、组件透明度、玻璃效果和模糊度。
+- 设置首页使用接近 KernelSU 的大标题和分组圆角卡片；原“外观”入口已改为“主题设置”，说明文字为“自定义更多主题选项”。
+- 主题设置支持系统、浅色和深色模式，并可选择 Material 或 MiuiX 风格。MiuiX 选项由本项目 Compose 组件实现，未直接引入需要 Kotlin 2.4 / 新版 Compose 的 MiuiX 库。
+- Android 12 及以上统一使用系统原生 `dynamicLightColorScheme` / `dynamicDarkColorScheme` 获取 Monet 色板；没有单独的固定品牌色开关。
+- 底栏可选择“悬浮底栏”或贴合屏幕底部的 Material 固态导航栏；液态玻璃只在悬浮底栏开启时生效。
+- 液态玻璃的实时背景模糊由 Apache-2.0 的 Haze `0.7.3` 提供；Android 13 及以上额外使用 AGSL 做轻量边缘折射和高光，Android 12 自动退化为磨砂模糊。
+- 未复制 KernelSU 或 MiuiX 的源码；KernelSU 仅用于交互结构与视觉方向参考，避免把 GPL 代码带入本项目。
+- 继续支持自定义字号、壁纸、纯色背景、组件透明度、整页玻璃效果和模糊度。
 - 壁纸的横屏和竖屏缩放、横向偏移、纵向偏移分别保存。
 - 新增或修改界面时需要适配应用内字号和系统字号，避免写死文字区域高度；弹窗长内容应可滚动。
 - 主界面启用 Android 边到边显示，内容可延伸到系统导航栏和手势横条区域，不隐藏手势横条。
@@ -208,10 +216,11 @@ Set-Location '<repository>\android-mobile'
 
 ## 六、当前开发状态
 
-当前 `main` 基于 `v2.11 / 16`，工作区有未提交的设置和外观改动：
+当前 `ui` 基于 `main` 的 `78a1963`，版本号仍为 `v2.11 / 16`。本轮 UI 改动包括：
 
-- 设置页改为二级菜单：外观、行为、首页显示、统计、学期设置、导入 / 导出；系统返回在二级页返回设置首页；新手引导是设置首页直接入口。
-- 壁纸、主题、字体、组件透明度、玻璃效果和模糊度归入“外观”。透明度界面为 `0%` 不透明、`100%` 全透明；内部 `componentAlpha` 保存实际不透明度，范围 `0..1`。
+- 设置页改为 KernelSU 风格的分组卡片二级菜单：主题设置、行为、首页显示、统计、学期设置、导入 / 导出；系统返回在二级页返回设置首页；新手引导是设置首页直接入口。
+- 主题设置页新增 Material / MiuiX、悬浮底栏和液态玻璃选项；这些值保存在 DataStore，并进入 CSV 设置备份。
+- 壁纸、主题、字体、组件透明度、整页玻璃效果和模糊度仍归入主题设置。透明度界面为 `0%` 不透明、`100%` 全透明；内部 `componentAlpha` 保存实际不透明度，范围 `0..1`。
 - 新增 `AppSettings.glassEffectEnabled`、`wallpaperBlurRadius`，由 `SettingsStore` 持久化和 `AppViewModel` 修改；模糊度为 `0..40dp`，滑块为 `0..100%`，玻璃效果关闭时滑块禁用。
 - 玻璃效果开启后，图片壁纸按设置模糊，主要卡片使用更透明背景和细边框。
 - 自选壁纸按实际图片尺寸计算铺满比例，支持拖动和双指缩放取景；缩放下限 `1f`，偏移按可移动范围计算，不留白。
@@ -220,8 +229,9 @@ Set-Location '<repository>\android-mobile'
 
 验证状态：
 
-- 最近修改后的源码尚未重新编译验证；接续开发前先运行 `:app:compileDebugKotlin`。
-- 未生成 APK、未提交或推送；版本号保持 `2.11 / 16`。
+- `:app:compileDebugKotlin` 已通过，Debug APK 已安装到 Android 16 / API 37 的 Xiaomi 设备并完成首页、设置和主题页渲染检查。
+- Monet 深浅色、Material / MiuiX 选中态和悬浮液态玻璃底栏均已在真机渲染；继续修改后仍需重新构建并复测固态底栏切换。
+- 未推送、未创建 PR 或 Release；版本号保持 `2.11 / 16`。
 ## 七、协作与维护方式
 
 - 用户提出文件或代码修改时，先等待用户说“全部说完”，再确认疑问、完整复述计划，得到确认后执行。

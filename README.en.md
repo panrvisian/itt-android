@@ -75,13 +75,16 @@ ITT organizes activities by groups and events. It supports normal timing, manual
 
 - A first-launch overlay guide can be skipped
 - The guide can be opened again from Settings
+- The grouped Settings screen includes a Theme Settings page with Material and MiuiX presentation styles
+- Android 12 and later use the system Monet dynamic palette for system, light, and dark modes
+- Bottom navigation can switch between solid and floating layouts; the floating layout optionally uses live blur and liquid-glass rendering
 - Edge-to-edge display accounts for the bottom gesture navigation bar
 - System-bar icon colors follow the current theme
 
 ## Tech Stack
 
 - Language: Kotlin
-- UI: Jetpack Compose (Material 3)
+- UI: Jetpack Compose (Material 3, MiuiX-inspired components, Monet dynamic color)
 - Database: Room 2.6.1 (database version 2, with migration)
 - Preferences: DataStore Preferences
 - Architecture: ViewModel + Repository

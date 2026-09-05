@@ -75,13 +75,16 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 
 - 首次打开时显示遮罩式新手引导，可以跳过
 - 可在设置中重新查看新手引导
+- 设置首页采用分组卡片布局，“主题设置”可切换 Material / MiuiX 界面风格
+- Android 12 及以上使用系统 Monet 动态色板，并随系统、浅色或深色主题切换
+- 底部导航可在固态栏和悬浮栏之间切换；悬浮栏可启用实时模糊与液态玻璃效果
 - 支持边到边显示，适配底部手势导航横条
 - 系统栏会根据当前主题自动调整图标颜色
 
 ## 技术栈
 
 - 语言：Kotlin
-- UI：Jetpack Compose（Material 3）
+- UI：Jetpack Compose（Material 3、MiuiX 风格组件、Monet 动态色）
 - 数据库：Room 2.6.1（数据库版本 2，含迁移）
 - 偏好存储：DataStore Preferences
 - 架构：ViewModel + Repository

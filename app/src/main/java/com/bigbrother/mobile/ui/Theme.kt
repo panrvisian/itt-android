@@ -19,12 +19,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.view.WindowCompat
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.FontScaleMode
 import com.bigbrother.mobile.data.ThemeMode
+import com.bigbrother.mobile.data.UiStyle
 
 val LocalIsDarkTheme = compositionLocalOf { false }
+val LocalUiStyle = compositionLocalOf { UiStyle.Miuix }
 
 @Composable
 fun BigBrotherTheme(
@@ -37,7 +40,7 @@ fun BigBrotherTheme(
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    val colorScheme = remember(context, dark) {
+    val colorScheme = remember(context, dark, settings.uiStyle) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         } else {
@@ -70,18 +73,39 @@ fun BigBrotherTheme(
         FontScaleMode.Large -> 1.12f
         FontScaleMode.XLarge -> 1.25f
     }
+    val baseTypography = Typography()
+    val typography = if (settings.uiStyle == UiStyle.Miuix) {
+        baseTypography.copy(
+            displaySmall = baseTypography.displaySmall.copy(fontWeight = FontWeight.Normal),
+            headlineMedium = baseTypography.headlineMedium.copy(fontWeight = FontWeight.Medium),
+            titleLarge = baseTypography.titleLarge.copy(fontWeight = FontWeight.Medium),
+            titleMedium = baseTypography.titleMedium.copy(fontWeight = FontWeight.Medium)
+        )
+    } else {
+        baseTypography
+    }
+    val shapes = if (settings.uiStyle == UiStyle.Miuix) {
+        Shapes(
+            small = RoundedCornerShape(16.dp),
+            medium = RoundedCornerShape(24.dp),
+            large = RoundedCornerShape(32.dp)
+        )
+    } else {
+        Shapes(
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(16.dp),
+            large = RoundedCornerShape(28.dp)
+        )
+    }
     CompositionLocalProvider(
         LocalDensity provides Density(density.density, fontScale),
-        LocalIsDarkTheme provides dark
+        LocalIsDarkTheme provides dark,
+        LocalUiStyle provides settings.uiStyle
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography(),
-            shapes = Shapes(
-                small = RoundedCornerShape(14.dp),
-                medium = RoundedCornerShape(20.dp),
-                large = RoundedCornerShape(28.dp)
-            ),
+            typography = typography,
+            shapes = shapes,
             content = content
         )
     }

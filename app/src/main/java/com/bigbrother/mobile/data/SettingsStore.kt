@@ -52,6 +52,12 @@ class SettingsStore(private val context: Context) {
                 "dark" -> ThemeMode.Dark
                 else -> ThemeMode.System
             },
+            uiStyle = when (this[stringPreferencesKey(KEY_UI_STYLE)]) {
+                "material" -> UiStyle.Material
+                else -> UiStyle.Miuix
+            },
+            floatingBottomBarEnabled = this[booleanPreferencesKey(KEY_FLOATING_BOTTOM_BAR)] ?: true,
+            liquidGlassBottomBarEnabled = this[booleanPreferencesKey(KEY_LIQUID_GLASS_BOTTOM_BAR)] ?: true,
             fontScaleMode = when (this[stringPreferencesKey(KEY_FONT_MODE)]) {
                 "small" -> FontScaleMode.Small
                 "medium" -> FontScaleMode.Medium
@@ -105,6 +111,12 @@ class SettingsStore(private val context: Context) {
             ThemeMode.Dark -> "dark"
             ThemeMode.System -> "system"
         }
+        this[stringPreferencesKey(KEY_UI_STYLE)] = when (settings.uiStyle) {
+            UiStyle.Material -> "material"
+            UiStyle.Miuix -> "miuix"
+        }
+        this[booleanPreferencesKey(KEY_FLOATING_BOTTOM_BAR)] = settings.floatingBottomBarEnabled
+        this[booleanPreferencesKey(KEY_LIQUID_GLASS_BOTTOM_BAR)] = settings.liquidGlassBottomBarEnabled
         this[stringPreferencesKey(KEY_FONT_MODE)] = when (settings.fontScaleMode) {
             FontScaleMode.Small -> "small"
             FontScaleMode.Medium -> "medium"
@@ -155,6 +167,9 @@ class SettingsStore(private val context: Context) {
 
     companion object {
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_UI_STYLE = "ui_style"
+        private const val KEY_FLOATING_BOTTOM_BAR = "floating_bottom_bar"
+        private const val KEY_LIQUID_GLASS_BOTTOM_BAR = "liquid_glass_bottom_bar"
         private const val KEY_FONT_MODE = "font_mode"
         private const val KEY_SHOW_CLOCK = "show_clock"
         private const val KEY_SHOW_RUNNING = "show_running"

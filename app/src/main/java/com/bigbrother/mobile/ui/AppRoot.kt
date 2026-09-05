@@ -58,17 +58,17 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -76,6 +76,24 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ColorLens
+import androidx.compose.material.icons.rounded.FontDownload
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.ImportExport
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Swipe
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewDay
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -95,6 +113,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -107,6 +126,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -144,6 +164,7 @@ import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
+import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.GroupStat
 import com.bigbrother.mobile.domain.StatsCalculator
@@ -155,6 +176,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.haze
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
@@ -207,8 +231,8 @@ private val onboardingSteps = listOf(
     OnboardingStep(
         tab = AppTab.Settings,
         target = OnboardingTarget.SettingsMenu,
-        title = "设置：外观与数据管理",
-        description = "这里可以调整主题、字号、壁纸等外观选项，并导入或导出备份。以后可在帮助区域重新打开本引导。",
+        title = "设置：主题与数据管理",
+        description = "这里可以切换 Material 或 MiuiX、Monet 动态色、悬浮底栏和液态玻璃，并导入或导出备份。",
     )
 )
 
@@ -264,9 +288,12 @@ fun AppRoot(viewModel: MainViewModel) {
         if (record.noteText.isNotBlank() || record.id in notedRecordIds) noteViewRecord = record else noteEditRecord = record
     }
 
-    val tabs = remember { listOf(AppTab.Home, AppTab.Timeline, AppTab.Notes, AppTab.Stats, AppTab.Settings) }
+    val tabs = remember { appBottomBarDestinations.map { it.tab } }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0), pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
+    val bottomBarHazeState = remember { HazeState() }
+    val useFloatingBottomBar = settings.floatingBottomBarEnabled
+    val useLiquidGlassBottomBar = useFloatingBottomBar && settings.liquidGlassBottomBarEnabled
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage to pagerState.currentPageOffsetFraction }
@@ -311,39 +338,30 @@ fun AppRoot(viewModel: MainViewModel) {
         Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, tab ->
-                    val label = when (tab) {
-                        AppTab.Home -> "首页"
-                        AppTab.Timeline -> "时间轴"
-                        AppTab.Stats -> "统计"
-                        AppTab.Notes -> "备注"
-                        AppTab.Settings -> "设置"
-                    }
-                    val icon = when (tab) {
-                        AppTab.Home -> R.drawable.ic_home
-                        AppTab.Timeline -> R.drawable.ic_timeline
-                        AppTab.Stats -> R.drawable.ic_stats
-                        AppTab.Notes -> R.drawable.ic_notes
-                        AppTab.Settings -> R.drawable.ic_settings
-                    }
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        icon = { AppIcon(icon, label) },
-                        label = { Text(label) }
-                    )
-                }
-            }
+            AppBottomBar(
+                selectedIndex = pagerState.currentPage,
+                floating = useFloatingBottomBar,
+                liquidGlass = useLiquidGlassBottomBar,
+                hazeState = bottomBarHazeState,
+                onSelected = { index -> scope.launch { pagerState.animateScrollToPage(index) } }
+            )
         }
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .statusBarsPadding()
+                .then(
+                    if (useLiquidGlassBottomBar) {
+                        Modifier.haze(
+                            state = bottomBarHazeState,
+                            style = HazeStyle(
+                                tint = MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
+                                blurRadius = 24.dp,
+                                noiseFactor = 0.08f
+                            )
+                        )
+                    } else Modifier
+                )
         ) {
             WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
             CompositionLocalProvider(
@@ -353,7 +371,10 @@ fun AppRoot(viewModel: MainViewModel) {
                 HorizontalPager(
                     state = pagerState,
                     pageSpacing = 0.dp,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (useFloatingBottomBar) Modifier.padding(bottom = padding.calculateBottomPadding()) else Modifier.padding(padding))
+                        .statusBarsPadding()
                 ) { page ->
                     val tab = tabs[page]
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -1654,16 +1675,17 @@ private enum class SettingsPage {
 private data class SettingsMenuEntry(
     val page: SettingsPage,
     val title: String,
-    val summary: String
+    val summary: String,
+    val icon: ImageVector
 )
 
 private val settingsMenuEntries = listOf(
-    SettingsMenuEntry(SettingsPage.Appearance, "外观", "主题、字体、壁纸、透明度和玻璃效果"),
-    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充"),
-    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局"),
-    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径"),
-    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数"),
-    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移")
+    SettingsMenuEntry(SettingsPage.Appearance, "主题设置", "自定义更多主题选项", Icons.Rounded.Palette),
+    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充", Icons.Rounded.Swipe),
+    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局", Icons.Rounded.Home),
+    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径", Icons.Rounded.BarChart),
+    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数", Icons.Rounded.CalendarMonth),
+    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移", Icons.Rounded.ImportExport)
 )
 
 @Composable
@@ -1720,36 +1742,38 @@ private fun SettingsScreen(
     if (page == SettingsPage.Main) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 42.dp, bottom = 28.dp)
         ) {
             item {
-                Text("设置", style = MaterialTheme.typography.headlineSmall)
-            }
-            settingsMenuEntries.forEach { entry ->
-                item {
-                    SettingsMenuRow(
-                        modifier = if (entry.page == SettingsPage.Appearance) Modifier.onGloballyPositioned { coordinates ->
-                            onRegisterOnboardingTarget(OnboardingTarget.SettingsMenu, coordinates.boundsInRoot())
-                        } else Modifier,
-                        title = entry.title,
-                        summary = entry.summary,
-                        onClick = { pageName = entry.page.name }
-                    )
-                }
+                Text("设置", style = MaterialTheme.typography.displaySmall)
             }
             item {
-                SettingsMenuRow(
-                    title = "新手引导",
-                    summary = "重新查看首页、时间轴、备注、统计和设置的功能说明",
-                    onClick = onRestartOnboarding
+                SettingsMenuGroup(
+                    entries = settingsMenuEntries.take(1),
+                    highlightedPage = SettingsPage.Appearance,
+                    onHighlightedPositioned = { onRegisterOnboardingTarget(OnboardingTarget.SettingsMenu, it) },
+                    onClick = { pageName = it.page.name }
+                )
+            }
+            item {
+                SettingsMenuGroup(entries = settingsMenuEntries.slice(1..2), onClick = { pageName = it.page.name })
+            }
+            item {
+                SettingsMenuGroup(entries = settingsMenuEntries.slice(3..4), onClick = { pageName = it.page.name })
+            }
+            item {
+                SettingsMenuGroup(
+                    entries = listOf(settingsMenuEntries.last()),
+                    footerEntry = SettingsMenuEntry(SettingsPage.Main, "新手引导", "重新查看主要功能说明", Icons.Rounded.Info),
+                    onClick = { entry -> if (entry.page == SettingsPage.Main) onRestartOnboarding() else pageName = entry.page.name }
                 )
             }
         }
     } else {
         SettingsSubpage(
             title = when (page) {
-                SettingsPage.Appearance -> "外观"
+                SettingsPage.Appearance -> "主题设置"
                 SettingsPage.Behavior -> "行为"
                 SettingsPage.HomeDisplay -> "首页显示"
                 SettingsPage.Statistics -> "统计"
@@ -1791,14 +1815,14 @@ private fun SettingsSubpage(
     content: @Composable () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
-            TextButton(onClick = onBack) { Text("‹ 返回") }
-            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 4.dp))
+            IconButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterStart)) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+            }
+            Text(title, style = MaterialTheme.typography.headlineMedium)
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -1811,15 +1835,16 @@ private fun SettingsSubpage(
 }
 
 @Composable
-private fun SettingsMenuRow(
-    modifier: Modifier = Modifier,
-    title: String,
-    summary: String,
-    onClick: () -> Unit
+private fun SettingsMenuGroup(
+    entries: List<SettingsMenuEntry>,
+    footerEntry: SettingsMenuEntry? = null,
+    highlightedPage: SettingsPage? = null,
+    onHighlightedPositioned: ((Rect) -> Unit)? = null,
+    onClick: (SettingsMenuEntry) -> Unit
 ) {
+    val allEntries = if (footerEntry == null) entries else entries + footerEntry
     Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
@@ -1830,18 +1855,47 @@ private fun SettingsMenuRow(
             androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
         } else null
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column {
+            allEntries.forEachIndexed { index, entry ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (entry.page == highlightedPage && onHighlightedPositioned != null) {
+                                Modifier.onGloballyPositioned { coordinates -> onHighlightedPositioned(coordinates.boundsInRoot()) }
+                            } else Modifier
+                        )
+                        .clickable { onClick(entry) }
+                        .padding(horizontal = 18.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = entry.icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(18.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(entry.title, style = MaterialTheme.typography.titleLarge)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            entry.summary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (index != allEntries.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 64.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                    )
+                }
             }
-            Text("›", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1852,28 +1906,68 @@ private fun AppearanceSettings(
     viewModel: MainViewModel,
     onAdjustWallpaper: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard(title = "主题") {
-            Text("主题模式")
-            ChoiceChipRow(
-                labels = listOf("跟随系统", "浅色", "深色"),
-                selectedIndex = when (settings.themeMode) {
-                    ThemeMode.System -> 0
-                    ThemeMode.Light -> 1
-                    ThemeMode.Dark -> 2
-                },
-                onSelected = {
-                    viewModel.setThemeMode(
-                        when (it) {
-                            1 -> ThemeMode.Light
-                            2 -> ThemeMode.Dark
-                            else -> ThemeMode.System
-                        }
-                    )
-                }
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        ThemePreviewCard(settings)
+        KernelSegmentedControl(
+            labels = listOf("跟随系统", "浅色", "深色"),
+            selectedIndex = when (settings.themeMode) {
+                ThemeMode.System -> 0
+                ThemeMode.Light -> 1
+                ThemeMode.Dark -> 2
+            },
+            onSelected = {
+                viewModel.setThemeMode(
+                    when (it) {
+                        1 -> ThemeMode.Light
+                        2 -> ThemeMode.Dark
+                        else -> ThemeMode.System
+                    }
+                )
+            }
+        )
+        SectionCard(title = "界面风格") {
+            Text("选择应用的组件和排版风格", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("字体")
+            KernelSegmentedControl(
+                labels = listOf("Material", "MiuiX"),
+                selectedIndex = if (settings.uiStyle == UiStyle.Material) 0 else 1,
+                onSelected = { viewModel.setUiStyle(if (it == 0) UiStyle.Material else UiStyle.Miuix) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            ThemeSwitchPreference(
+                title = "Monet 动态取色",
+                summary = "使用 Android 系统壁纸生成的标准动态色板",
+                icon = Icons.Rounded.ColorLens,
+                checked = true,
+                enabled = false,
+                onCheckedChange = {}
+            )
+        }
+        SectionCard(title = "导航与材质") {
+            ThemeSwitchPreference(
+                title = "悬浮底栏",
+                summary = "关闭后使用贴合屏幕底部的固态导航栏",
+                icon = Icons.Rounded.ViewDay,
+                checked = settings.floatingBottomBarEnabled,
+                onCheckedChange = viewModel::setFloatingBottomBarEnabled
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            ThemeSwitchPreference(
+                title = "液态玻璃",
+                summary = if (settings.floatingBottomBarEnabled) "为悬浮底栏启用实时背景模糊和流体高光" else "请先开启悬浮底栏",
+                icon = Icons.Rounded.WaterDrop,
+                checked = settings.liquidGlassBottomBarEnabled,
+                enabled = settings.floatingBottomBarEnabled,
+                onCheckedChange = viewModel::setLiquidGlassBottomBarEnabled
+            )
+        }
+        SectionCard(title = "字体") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.FontDownload, contentDescription = null, modifier = Modifier.size(26.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("界面字号", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             ChoiceChipRow(
                 labels = listOf("跟随系统", "小", "中", "大", "特大"),
                 selectedIndex = when (settings.fontScaleMode) {
@@ -1899,9 +1993,11 @@ private fun AppearanceSettings(
         }
         SectionCard(title = "壁纸") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Wallpaper, contentDescription = null, modifier = Modifier.size(26.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     val wallpaperLabel = when (settings.wallpaperMode) {
-                        WallpaperMode.Default -> "默认黑白纯色"
+                        WallpaperMode.Default -> "Monet 动态背景"
                         WallpaperMode.Image -> "自选图片"
                         WallpaperMode.Solid -> "纯色"
                     }
@@ -1911,7 +2007,7 @@ private fun AppearanceSettings(
                 TextButton(onClick = onAdjustWallpaper) { Text("调整壁纸") }
             }
         }
-        SectionCard(title = "组件效果") {
+        SectionCard(title = "背景与组件效果") {
             val transparency = (1f - settings.componentAlpha).coerceIn(0f, 1f)
             Text("组件透明度：${(transparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(
@@ -1920,7 +2016,13 @@ private fun AppearanceSettings(
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
-            SettingSwitchLine("玻璃效果", settings.glassEffectEnabled) { viewModel.setGlassEffectEnabled(it) }
+            ThemeSwitchPreference(
+                title = "背景玻璃效果",
+                summary = "模糊自定义壁纸并降低主要卡片的不透明度",
+                icon = Icons.Rounded.BlurOn,
+                checked = settings.glassEffectEnabled,
+                onCheckedChange = viewModel::setGlassEffectEnabled
+            )
             val blurPercent = (settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)
             Text("模糊度：${(blurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(
@@ -1932,6 +2034,100 @@ private fun AppearanceSettings(
             )
             Text("开启后使用半透明界面和背景模糊效果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun ThemePreviewCard(settings: AppSettings) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Card(
+            modifier = Modifier.size(width = 190.dp, height = 164.dp),
+            shape = RoundedCornerShape(30.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(26.dp).clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(34.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(4) { index ->
+                        Box(
+                            modifier = Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(
+                                if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = if (settings.uiStyle == UiStyle.Miuix) "MiuiX · Monet" else "Material · Monet",
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun KernelSegmentedControl(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            Surface(
+                onClick = { onSelected(index) },
+                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 14.dp), contentAlignment = Alignment.Center) {
+                    Text(label, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwitchPreference(
+    title: String,
+    summary: String,
+    icon: ImageVector,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.55f)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(27.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 
@@ -2062,8 +2258,7 @@ private fun WallpaperBackground(
     val scale = if (isLandscape) settings.wallpaperLandscapeScale else settings.wallpaperPortraitScale
     val offsetX = if (isLandscape) settings.wallpaperLandscapeOffsetX else settings.wallpaperPortraitOffsetX
     val offsetY = if (isLandscape) settings.wallpaperLandscapeOffsetY else settings.wallpaperPortraitOffsetY
-    val isDark = LocalIsDarkTheme.current
-    val defaultColor = if (isDark) Color.Black else Color.White
+    val defaultColor = MaterialTheme.colorScheme.background
     val solidColor = colorFromArgb(settings.wallpaperSolidColorArgb)
     val backgroundColor = when (settings.wallpaperMode) {
         WallpaperMode.Solid -> solidColor
@@ -3725,11 +3920,11 @@ private fun TimelineDayView(
                         .offset(x = labelWidth + 6.dp, y = minuteHeight * nowMinutes.toFloat())
                         .width(contentWidth)
                         .height(2.dp)
-                        .background(Color.Red)
+                        .background(MaterialTheme.colorScheme.error)
                 )
                 Text(
                     text = TimeUtils.formatTime(now, settings.use24Hour),
-                    color = Color.Red,
+                    color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.offset(x = 0.dp, y = minuteHeight * nowMinutes.toFloat() - 8.dp).width(labelWidth),
                     textAlign = TextAlign.End
