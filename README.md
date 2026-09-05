@@ -103,8 +103,8 @@ ITT 按分组和事件组织活动，支持普通计时、手动补录、记录�
 
 - Windows、Android Studio 或 PowerShell
 - JDK 21
-- Android SDK Platform 34
-- Android SDK Build Tools 34.0.0
+- Android SDK Platform 37.0
+- Android SDK Build Tools 37.0.0
 - Android SDK Platform-Tools（包含 `adb`）
 - 可联网下载 Gradle 依赖
 
@@ -133,7 +133,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ## 项目结构
 
 ```text
-android-mobile/
+itt-android/
 ├── app/
 │   ├── build.gradle.kts
 │   └── src/main/

@@ -37,9 +37,17 @@ $env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
-Set-Location '<repository>\android-mobile'
+Set-Location '<repository>\itt-android'
 .\gradlew.bat :app:compileDebugKotlin --no-daemon
 .\gradlew.bat :app:assembleDebug --no-daemon
+```
+
+SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 37.0.0、Android SDK Platform-Tools。命令行可执行：
+
+```powershell
+& "$env:ANDROID_SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" `
+  --sdk_root="$env:ANDROID_SDK_ROOT" `
+  'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
 ```
 
 构建产物：

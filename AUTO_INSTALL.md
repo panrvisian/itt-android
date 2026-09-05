@@ -11,11 +11,22 @@
 ## 环境要求
 
 1. JDK 21，并确保 JDK 根目录内存在 `bin\java.exe`
-2. Android SDK Platform 34
-3. Android SDK Build Tools 34.0.0
+2. Android SDK Platform 37.0
+3. Android SDK Build Tools 37.0.0
 4. Android SDK Platform-Tools（包含 `adb.exe`）
 5. 手机开启开发者选项和 USB 调试，或已完成无线调试配对
 6. 首次构建时可以访问网络，以下载 Gradle 依赖
+
+SDK Manager 安装项：
+
+```powershell
+$env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
+& "$env:ANDROID_SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" `
+  --sdk_root="$env:ANDROID_SDK_ROOT" `
+  'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+```
+
+如果使用 Android Studio，则在 SDK Manager 中安装同名的 Platform 37.0、Build Tools 37.0.0 和 Platform-Tools。
 
 ## 在另一台主机上的配置
 

@@ -103,8 +103,8 @@ ITT organizes activities by groups and events. It supports normal timing, manual
 
 - Windows, Android Studio, or PowerShell
 - JDK 21
-- Android SDK Platform 34
-- Android SDK Build Tools 34.0.0
+- Android SDK Platform 37.0
+- Android SDK Build Tools 37.0.0
 - Android SDK Platform-Tools (including `adb`)
 - Internet access to resolve Gradle dependencies
 
@@ -133,7 +133,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ## Project Structure
 
 ```text
-android-mobile/
+itt-android/
 ├── app/
 │   ├── build.gradle.kts
 │   └── src/main/
