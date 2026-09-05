@@ -36,6 +36,58 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 val LocalIsDarkTheme = compositionLocalOf { false }
 val LocalUiStyle = compositionLocalOf { UiStyle.Miuix }
 
+private val MaterialLightColorScheme = lightColorScheme(
+    primary = Color(0xFF0B57D0),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD3E3FD),
+    onPrimaryContainer = Color(0xFF041E49),
+    secondary = Color(0xFF535F70),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD7E3F7),
+    onSecondaryContainer = Color(0xFF101C2B),
+    background = Color(0xFFF8F9FA),
+    onBackground = Color(0xFF1F1F1F),
+    surface = Color(0xFFF8F9FA),
+    onSurface = Color(0xFF1F1F1F),
+    surfaceVariant = Color(0xFFE1E2EC),
+    onSurfaceVariant = Color(0xFF44474E),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF0F4F9),
+    surfaceContainer = Color(0xFFEAEFF5),
+    surfaceContainerHigh = Color(0xFFE1E6ED),
+    surfaceContainerHighest = Color(0xFFD8DFE8),
+    outline = Color(0xFF74777F),
+    outlineVariant = Color(0xFFC4C6D0),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF)
+)
+
+private val MaterialDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFA8C7FA),
+    onPrimary = Color(0xFF003062),
+    primaryContainer = Color(0xFF00468A),
+    onPrimaryContainer = Color(0xFFD3E3FD),
+    secondary = Color(0xFFB9C8DA),
+    onSecondary = Color(0xFF253140),
+    secondaryContainer = Color(0xFF3B4758),
+    onSecondaryContainer = Color(0xFFD7E3F7),
+    background = Color(0xFF111318),
+    onBackground = Color(0xFFE2E2E9),
+    surface = Color(0xFF111318),
+    onSurface = Color(0xFFE2E2E9),
+    surfaceVariant = Color(0xFF44474E),
+    onSurfaceVariant = Color(0xFFC4C6D0),
+    surfaceContainerLowest = Color(0xFF0C0E13),
+    surfaceContainerLow = Color(0xFF1D2024),
+    surfaceContainer = Color(0xFF212328),
+    surfaceContainerHigh = Color(0xFF2B2D33),
+    surfaceContainerHighest = Color(0xFF36383E),
+    outline = Color(0xFF8E9099),
+    outlineVariant = Color(0xFF44474E),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
+)
+
 @Composable
 fun BigBrotherTheme(
     settings: AppSettings,
@@ -48,7 +100,42 @@ fun BigBrotherTheme(
         ThemeMode.Dark -> true
     }
     val accentColor = settings.accentColorArgb?.let(::Color)
-    val miuixController = remember(dark, settings.monetEnabled, settings.accentColorArgb) {
+
+    val miuixLightColors = remember(accentColor) {
+        top.yukonga.miuix.kmp.theme.lightColorScheme(
+            background = Color(0xFFF2F2F7),
+            surface = Color(0xFFFFFFFF),
+            surfaceContainer = Color(0xFFFFFFFF),
+            surfaceContainerHigh = Color(0xFFE8E8ED),
+            surfaceContainerHighest = Color(0xFFE0E0E6),
+            onBackground = Color(0xFF000000),
+            onSurface = Color(0xFF000000),
+            onSurfaceContainerVariant = Color(0xFF8C8C8E),
+            outline = Color(0xFFE5E5EA),
+            dividerLine = Color(0xFFE0E0E6),
+            primary = accentColor ?: Color(0xFF3482FF),
+            primaryVariant = accentColor ?: Color(0xFF3482FF)
+        )
+    }
+
+    val miuixDarkColors = remember(accentColor) {
+        top.yukonga.miuix.kmp.theme.darkColorScheme(
+            background = Color(0xFF121212),
+            surface = Color(0xFF1C1C1E),
+            surfaceContainer = Color(0xFF1C1C1E),
+            surfaceContainerHigh = Color(0xFF2C2C2E),
+            surfaceContainerHighest = Color(0xFF3A3A3C),
+            onBackground = Color(0xFFF2F2F2),
+            onSurface = Color(0xFFF2F2F2),
+            onSurfaceContainerVariant = Color(0xFF8E8E93),
+            outline = Color(0xFF2C2C2E),
+            dividerLine = Color(0xFF2C2C2E),
+            primary = accentColor ?: Color(0xFF277AF7),
+            primaryVariant = accentColor ?: Color(0xFF0073DD)
+        )
+    }
+
+    val miuixController = remember(dark, settings.monetEnabled, accentColor, miuixLightColors, miuixDarkColors) {
         ThemeController(
             colorSchemeMode = when {
                 settings.monetEnabled && dark -> ColorSchemeMode.MonetDark
@@ -56,14 +143,25 @@ fun BigBrotherTheme(
                 dark -> ColorSchemeMode.Dark
                 else -> ColorSchemeMode.Light
             },
+            lightColors = miuixLightColors,
+            darkColors = miuixDarkColors,
             keyColor = accentColor.takeIf { settings.monetEnabled },
             isDark = dark,
         )
     }
+
     val miuixColors = miuixController.currentColors()
-    val colorScheme = remember(context, dark, settings.monetEnabled, settings.accentColorArgb, miuixColors) {
-        if (settings.monetEnabled && accentColor == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    val colorScheme = remember(context, dark, settings.monetEnabled, settings.uiStyle, accentColor, miuixColors) {
+        if (settings.uiStyle == UiStyle.Material) {
+            if (settings.monetEnabled) {
+                if (accentColor == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                } else {
+                    miuixColors.toMaterialColorScheme(dark)
+                }
+            } else {
+                if (dark) MaterialDarkColorScheme else MaterialLightColorScheme
+            }
         } else {
             miuixColors.toMaterialColorScheme(dark)
         }
@@ -117,7 +215,7 @@ fun BigBrotherTheme(
     } else {
         Shapes(
             small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(16.dp),
+            medium = RoundedCornerShape(20.dp),
             large = RoundedCornerShape(28.dp)
         )
     }
@@ -138,7 +236,7 @@ fun BigBrotherTheme(
 }
 
 private fun MiuixColors.toMaterialColorScheme(dark: Boolean) =
-    (if (dark) darkColorScheme() else lightColorScheme()).copy(
+    (if (dark) MaterialDarkColorScheme else MaterialLightColorScheme).copy(
         primary = primary,
         onPrimary = onPrimary,
         primaryContainer = primaryContainer,
@@ -163,7 +261,7 @@ private fun MiuixColors.toMaterialColorScheme(dark: Boolean) =
         onSurfaceVariant = onSurfaceContainerVariant,
         outline = outline,
         outlineVariant = dividerLine,
-        surfaceContainerLowest = surface,
+        surfaceContainerLowest = background,
         surfaceContainerLow = surfaceContainer,
         surfaceContainer = surfaceContainer,
         surfaceContainerHigh = surfaceContainerHigh,

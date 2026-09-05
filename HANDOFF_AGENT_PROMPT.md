@@ -201,6 +201,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 底部导航顺序：首页、时间轴、备注、统计、设置。
 - 设置首页使用接近 KernelSU 的大标题和分组圆角卡片；原“外观”入口已改为“主题设置”，说明文字为“自定义更多主题选项”。
 - 主题设置使用“跟随系统 / 浅色 / 深色”三个横向按钮，并可选择 Material 或 MiuiX 风格；新安装默认 MiuiX，MiuiX `0.9.2` 已作为真实组件和主题依赖接入。
+- 颜色与层次优化：Miuix 风格浅色模式采用 `#F2F2F7` 柔和背景与 `#FFFFFF` 纯白卡片，深色模式采用 `#121212` 舒适背景与 `#1C1C1E` 提升卡片，彻底解决原全白刺眼和全黑无层次的问题；Material Design 风格严格遵循 Google 最新 Material 3（Pixel 原生设置）规范，浅色使用 `#F8F9FA` Surface 和 `#F0F4F9` Container，深色使用 `#111318` Surface 和 `#1D2024` Container，保持与 Miuix 相同的页面布局结构，仅更换 M3 UI 控件元素（Card、Switch、Slider、SegmentedControl）。
 - Monet 默认开启；未指定强调色时使用系统动态色，指定预设强调色后以该颜色生成主题。关闭 Monet 时隐藏强调色选择并恢复 MiuiX 默认明暗配色。Monet 与强调色设置由 DataStore 持久化并进入 CSV 备份。
 - 底栏可选择悬浮或贴合屏幕底部的 MiuiX 导航栏；液态玻璃默认开启且只在悬浮底栏生效。主页面只能通过底栏切换，`HorizontalPager` 的手势翻页关闭，避免与横向滑杆冲突。
 - 悬浮液态玻璃底栏使用满圆角，以 MiuiX 官方示例的双层内容遮罩实现选中项着色，并使用 `DampedDragAnimation`、组合 Backdrop、模糊、鲜艳度、AGSL lens 和高光完成切换及按压效果；相关适配代码保留 Apache-2.0 来源声明。

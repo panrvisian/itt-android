@@ -79,7 +79,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -2250,18 +2252,35 @@ private fun KernelSegmentedControl(
     selectedIndex: Int,
     onSelected: (Int) -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.forEachIndexed { index, label ->
-            val selected = index == selectedIndex
-            Surface(
-                onClick = { onSelected(index) },
-                modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 14.dp), contentAlignment = Alignment.Center) {
-                    Text(label, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+            alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            labels.forEachIndexed { index, label ->
+                val selected = index == selectedIndex
+                Surface(
+                    onClick = { onSelected(index) },
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (selected) MaterialTheme.colorScheme.surfaceContainerLowest else Color.Transparent,
+                    contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    shadowElevation = if (selected) 1.dp else 0.dp
+                ) {
+                    Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
@@ -2294,7 +2313,12 @@ private fun AdaptiveSlider(
             modifier = modifier,
             enabled = enabled,
             valueRange = valueRange,
-            steps = steps
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
         )
     }
 }
@@ -2308,7 +2332,17 @@ private fun AdaptiveSwitch(
     if (LocalUiStyle.current == UiStyle.Miuix) {
         MiuixSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     } else {
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
+        )
     }
 }
 
@@ -2723,9 +2757,15 @@ private fun IconTextButton(
 
 @Composable
 private fun SettingLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f))
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
