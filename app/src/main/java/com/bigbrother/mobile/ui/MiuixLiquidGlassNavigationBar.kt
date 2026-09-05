@@ -198,14 +198,11 @@ internal fun MiuixLiquidGlassNavigationBar(
         }
     }
 
-    var currentIndex by remember { mutableIntStateOf(selectedIndex) }
-
     class DampedDragHolder {
         var instance: DampedDragAnimation? = null
     }
-
     val holder = remember { DampedDragHolder() }
-
+    val onItemClickUpdated by rememberUpdatedState(onItemClick)
     val dampedDrag = remember(animationScope, tabsCount, density, isLtr) {
         DampedDragAnimation(
             animationScope = animationScope,
@@ -230,11 +227,7 @@ internal fun MiuixLiquidGlassNavigationBar(
             onDragStarted = {},
             onDragStopped = {
                 val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
-                if (currentIndex != targetIndex) {
-                    currentIndex = targetIndex
-                } else {
-                    animateToValue(targetIndex.toFloat())
-                }
+                onItemClickUpdated(targetIndex)
                 animationScope.launch {
                     offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                 }
@@ -254,14 +247,7 @@ internal fun MiuixLiquidGlassNavigationBar(
     }
 
     LaunchedEffect(selectedIndex) {
-        if (currentIndex != selectedIndex) currentIndex = selectedIndex
-    }
-    val onItemClickUpdated by rememberUpdatedState(onItemClick)
-    LaunchedEffect(dampedDrag) {
-        snapshotFlow { currentIndex }.drop(1).collectLatest { index ->
-            dampedDrag.animateToValue(index.toFloat())
-            onItemClickUpdated(index)
-        }
+        dampedDrag.animateToValue(selectedIndex.toFloat())
     }
 
     val interactiveHighlight = remember(animationScope, isLtr) {
@@ -303,9 +289,9 @@ internal fun MiuixLiquidGlassNavigationBar(
                         interactionSource = null,
                         indication = null,
                         role = Role.Tab,
-                        onClick = { currentIndex = index },
+                        onClick = { onItemClickUpdated(index) },
                     )
-                    .semantics { selected = index == currentIndex }
+                    .semantics { selected = index == selectedIndex }
                     .weight(1f)
                     .fillMaxHeight()
                     .graphicsLayer {

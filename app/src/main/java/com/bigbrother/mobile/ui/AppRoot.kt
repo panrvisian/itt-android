@@ -311,12 +311,10 @@ fun AppRoot(viewModel: MainViewModel) {
     }
 
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage to pagerState.currentPageOffsetFraction }
+        snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
-            .collect { (page, offset) ->
-                if (abs(offset) < 0.001f) {
-                    tabs.getOrNull(page)?.let { if (it != selectedTab) viewModel.selectTab(it) }
-                }
+            .collect { page ->
+                tabs.getOrNull(page)?.let { if (it != selectedTab) viewModel.selectTab(it) }
             }
     }
 
