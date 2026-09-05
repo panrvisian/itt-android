@@ -336,23 +336,23 @@ fun AppRoot(viewModel: MainViewModel) {
     var onboardingHandledThisSession by rememberSaveable { mutableStateOf(false) }
     var onboardingTargetReady by rememberSaveable { mutableStateOf(false) }
 
-    val visibleGroups = remember(groups) { groups.visibleGroupsForUi() }
-    val visibleEvents = remember(events) { events.visibleEventsForUi() }
-    val eventRecordCounts = remember(records) {
-        records.filterNot { it.isContinuation }.groupingBy { it.eventId }.eachCount()
+    val visibleGroups by remember(groups) { derivedStateOf { groups.visibleGroupsForUi() } }
+    val visibleEvents by remember(events) { derivedStateOf { events.visibleEventsForUi() } }
+    val eventRecordCounts by remember(records) {
+        derivedStateOf { records.filterNot { it.isContinuation }.groupingBy { it.eventId }.eachCount() }
     }
-    val sortedEvents = remember(visibleEvents, eventRecordCounts) { visibleEvents.sortedForUi(eventRecordCounts) }
-    val eventsByGroup = remember(sortedEvents) { sortedEvents.groupBy { it.groupId } }
-    val eventMap = remember(visibleEvents) { visibleEvents.associateBy { it.id } }
-    val groupMap = remember(visibleGroups) { visibleGroups.associateBy { it.id } }
-    val runningRecords = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
-    val finishedRecords = remember(records) { records.filter { it.endTime != null }.sortedByDescending { it.startTime } }
-    val imageRecordIds = remember(noteImages) { noteImages.map { it.recordId }.toSet() }
-    val notedRecordIds = remember(records, imageRecordIds) {
-        (records.filter { it.noteText.isNotBlank() }.map { it.id } + imageRecordIds).toSet()
+    val sortedEvents by remember(visibleEvents, eventRecordCounts) { derivedStateOf { visibleEvents.sortedForUi(eventRecordCounts) } }
+    val eventsByGroup by remember(sortedEvents) { derivedStateOf { sortedEvents.groupBy { it.groupId } } }
+    val eventMap by remember(visibleEvents) { derivedStateOf { visibleEvents.associateBy { it.id } } }
+    val groupMap by remember(visibleGroups) { derivedStateOf { visibleGroups.associateBy { it.id } } }
+    val runningRecords by remember(records) { derivedStateOf { records.filter { it.endTime == null }.sortedByDescending { it.startTime } } }
+    val finishedRecords by remember(records) { derivedStateOf { records.filter { it.endTime != null }.sortedByDescending { it.startTime } } }
+    val imageRecordIds by remember(noteImages) { derivedStateOf { noteImages.map { it.recordId }.toSet() } }
+    val notedRecordIds by remember(records, imageRecordIds) {
+        derivedStateOf { (records.filter { it.noteText.isNotBlank() }.map { it.id } + imageRecordIds).toSet() }
     }
-    val notedRecords = remember(records, imageRecordIds) {
-        records.filter { it.noteText.isNotBlank() || it.id in imageRecordIds }.sortedByDescending { it.startTime }
+    val notedRecords by remember(records, imageRecordIds) {
+        derivedStateOf { records.filter { it.noteText.isNotBlank() || it.id in imageRecordIds }.sortedByDescending { it.startTime } }
     }
     val openNote: (RecordEntity) -> Unit = { record ->
         if (record.noteText.isNotBlank() || record.id in notedRecordIds) noteViewRecord = record else noteEditRecord = record
@@ -439,7 +439,7 @@ fun AppRoot(viewModel: MainViewModel) {
                     HorizontalPager(
                         state = pagerState,
                         pageSpacing = 0.dp,
-                        beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
+                        beyondViewportPageCount = 0,
                         overscrollEffect = null,
                         userScrollEnabled = !isSettingsSubpage,
                         modifier = Modifier

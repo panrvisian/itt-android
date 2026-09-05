@@ -39,15 +39,17 @@ class AppRepository(
     val settings: Flow<AppSettings> = settingsStore.flow
     val onboardingCompleted: Flow<Boolean?> = settingsStore.onboardingCompleted
 
-    suspend fun initialize() {
-        ensureSystemGroup()
-        normalizeOvernight()
+    suspend fun initialize() = withContext(Dispatchers.IO) {
+        ensureSystemGroupInTransaction()
+        normalizeOvernightInTransaction()
         cleanupNoteDrafts()
         requestWidgetRefresh()
     }
 
-    suspend fun ensureSystemGroup() = database.withTransaction {
-        ensureSystemGroupInTransaction()
+    suspend fun ensureSystemGroup() = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            ensureSystemGroupInTransaction()
+        }
     }
 
     private suspend fun ensureSystemGroupInTransaction() {
@@ -56,199 +58,235 @@ class AppRepository(
         }
     }
 
-    suspend fun addGroup(name: String, colorArgb: Int): String = database.withTransaction {
-        val nextOrder = (groupsDao.getAllOnce().maxOfOrNull { it.sortOrder } ?: 0) + 1
-        val group = GroupEntity(name = name, colorArgb = colorArgb, sortOrder = nextOrder)
-        groupsDao.insert(group)
-        group.id
+    suspend fun addGroup(name: String, colorArgb: Int): String = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val nextOrder = (groupsDao.getAllOnce().maxOfOrNull { it.sortOrder } ?: 0) + 1
+            val group = GroupEntity(name = name, colorArgb = colorArgb, sortOrder = nextOrder)
+            groupsDao.insert(group)
+            group.id
+        }
     }
 
-    suspend fun renameGroup(groupId: String, name: String) = database.withTransaction {
-        groupsDao.rename(groupId, name)
-        recordsDao.syncGroupName(groupId, name)
+    suspend fun renameGroup(groupId: String, name: String) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            groupsDao.rename(groupId, name)
+            recordsDao.syncGroupName(groupId, name)
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun changeGroupColor(groupId: String, colorArgb: Int) = database.withTransaction {
-        groupsDao.updateColor(groupId, colorArgb)
-        recordsDao.syncGroupColor(groupId, colorArgb)
+    suspend fun changeGroupColor(groupId: String, colorArgb: Int) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            groupsDao.updateColor(groupId, colorArgb)
+            recordsDao.syncGroupColor(groupId, colorArgb)
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun moveGroup(groupId: String, direction: Int) = database.withTransaction {
-        val visible = groupsDao.getAllOnce()
-            .filter { !it.isDeleted && !it.isSystem }
-            .sortedWith(compareBy<GroupEntity> { it.sortOrder }.thenBy { it.name })
-            .toMutableList()
-        val index = visible.indexOfFirst { it.id == groupId }
-        if (index < 0) return@withTransaction
-        val target = (index + direction.coerceIn(-1, 1)).coerceIn(0, visible.lastIndex)
-        if (target == index) return@withTransaction
-        val item = visible.removeAt(index)
-        visible.add(target, item)
-        visible.forEachIndexed { order, group -> groupsDao.updateSortOrder(group.id, order + 1) }
+    suspend fun moveGroup(groupId: String, direction: Int) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val visible = groupsDao.getAllOnce()
+                .filter { !it.isDeleted && !it.isSystem }
+                .sortedWith(compareBy<GroupEntity> { it.sortOrder }.thenBy { it.name })
+                .toMutableList()
+            val index = visible.indexOfFirst { it.id == groupId }
+            if (index < 0) return@withTransaction
+            val target = (index + direction.coerceIn(-1, 1)).coerceIn(0, visible.lastIndex)
+            if (target == index) return@withTransaction
+            val item = visible.removeAt(index)
+            visible.add(target, item)
+            visible.forEachIndexed { order, group -> groupsDao.updateSortOrder(group.id, order + 1) }
+        }
     }
 
-    suspend fun deleteGroup(groupId: String): Boolean = database.withTransaction {
-        val group = groupsDao.getById(groupId) ?: return@withTransaction false
-        if (group.isSystem) return@withTransaction false
-        if (recordsDao.countRunningByGroup(groupId) > 0) return@withTransaction false
-        if (eventsDao.getAllOnce().any { it.groupId == groupId && !it.isDeleted }) return@withTransaction false
-        groupsDao.setDeleted(groupId, true)
-        true
+    suspend fun deleteGroup(groupId: String): Boolean = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val group = groupsDao.getById(groupId) ?: return@withTransaction false
+            if (group.isSystem) return@withTransaction false
+            if (recordsDao.countRunningByGroup(groupId) > 0) return@withTransaction false
+            if (eventsDao.getAllOnce().any { it.groupId == groupId && !it.isDeleted }) return@withTransaction false
+            groupsDao.setDeleted(groupId, true)
+            true
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun addEvent(groupId: String, name: String): String = database.withTransaction {
-        val nextOrder = (eventsDao.getAllOnce().maxOfOrNull { it.sortOrder } ?: 0) + 1
-        val event = EventEntity(groupId = groupId, name = name, sortOrder = nextOrder)
-        eventsDao.insert(event)
-        event.id
+    suspend fun addEvent(groupId: String, name: String): String = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val nextOrder = (eventsDao.getAllOnce().maxOfOrNull { it.sortOrder } ?: 0) + 1
+            val event = EventEntity(groupId = groupId, name = name, sortOrder = nextOrder)
+            eventsDao.insert(event)
+            event.id
+        }
     }
 
-    suspend fun renameEvent(eventId: String, name: String) = database.withTransaction {
-        eventsDao.rename(eventId, name)
-        recordsDao.syncEventName(eventId, name)
+    suspend fun renameEvent(eventId: String, name: String) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            eventsDao.rename(eventId, name)
+            recordsDao.syncEventName(eventId, name)
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun moveEvent(eventId: String, groupId: String) = database.withTransaction {
-        eventsDao.move(eventId, groupId)
-        val event = eventsDao.getById(eventId) ?: return@withTransaction
-        val group = groupsDao.getById(groupId) ?: return@withTransaction
-        recordsDao.syncEventGroup(event.id, group.id, group.name, group.colorArgb)
+    suspend fun moveEvent(eventId: String, groupId: String) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            eventsDao.move(eventId, groupId)
+            val event = eventsDao.getById(eventId) ?: return@withTransaction
+            val group = groupsDao.getById(groupId) ?: return@withTransaction
+            recordsDao.syncEventGroup(event.id, group.id, group.name, group.colorArgb)
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun toggleFavorite(eventId: String, favorite: Boolean) = database.withTransaction {
-        eventsDao.setFavorite(eventId, favorite)
+    suspend fun toggleFavorite(eventId: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            eventsDao.setFavorite(eventId, favorite)
+        }
     }
 
-    suspend fun deleteEvent(eventId: String): Boolean = database.withTransaction {
-        if (recordsDao.countRunningByEvent(eventId) > 0) return@withTransaction false
-        eventsDao.setDeleted(eventId, true)
-        true
+    suspend fun deleteEvent(eventId: String): Boolean = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            if (recordsDao.countRunningByEvent(eventId) > 0) return@withTransaction false
+            eventsDao.setDeleted(eventId, true)
+            true
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun startEvent(eventId: String): String = database.withTransaction {
-        val event = eventsDao.getById(eventId) ?: error("event not found")
-        val group = groupsDao.getById(event.groupId) ?: error("group not found")
-        val record = RecordEntity(
-            eventId = event.id,
-            eventNameSnapshot = event.name,
-            groupIdSnapshot = group.id,
-            groupNameSnapshot = group.name,
-            groupColorArgbSnapshot = group.colorArgb,
-            startTime = System.currentTimeMillis()
-        )
-        recordsDao.insert(record)
-        record.id
+    suspend fun startEvent(eventId: String): String = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val event = eventsDao.getById(eventId) ?: error("event not found")
+            val group = groupsDao.getById(event.groupId) ?: error("group not found")
+            val record = RecordEntity(
+                eventId = event.id,
+                eventNameSnapshot = event.name,
+                groupIdSnapshot = group.id,
+                groupNameSnapshot = group.name,
+                groupColorArgbSnapshot = group.colorArgb,
+                startTime = System.currentTimeMillis()
+            )
+            recordsDao.insert(record)
+            record.id
+        }
     }.also { requestWidgetRefresh() }
 
     /** Toggles the selected event for the desktop widget as one database transaction. */
-    suspend fun toggleEvent(eventId: String): Boolean = database.withTransaction {
-        val running = recordsDao.getAllOnce()
-            .filter { it.eventId == eventId && it.endTime == null }
-            .maxByOrNull { it.startTime }
-        if (running != null) {
-            recordsDao.end(running.id, System.currentTimeMillis())
-            normalizeOvernightInTransaction()
-            false
-        } else {
-            val event = eventsDao.getById(eventId) ?: return@withTransaction false
-            if (event.isDeleted) return@withTransaction false
-            val group = groupsDao.getById(event.groupId) ?: return@withTransaction false
-            recordsDao.insert(
-                RecordEntity(
-                    eventId = event.id,
-                    eventNameSnapshot = event.name,
-                    groupIdSnapshot = group.id,
-                    groupNameSnapshot = group.name,
-                    groupColorArgbSnapshot = group.colorArgb,
-                    startTime = System.currentTimeMillis()
+    suspend fun toggleEvent(eventId: String): Boolean = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val running = recordsDao.getAllOnce()
+                .filter { it.eventId == eventId && it.endTime == null }
+                .maxByOrNull { it.startTime }
+            if (running != null) {
+                recordsDao.end(running.id, System.currentTimeMillis())
+                normalizeOvernightInTransaction()
+                false
+            } else {
+                val event = eventsDao.getById(eventId) ?: return@withTransaction false
+                if (event.isDeleted) return@withTransaction false
+                val group = groupsDao.getById(event.groupId) ?: return@withTransaction false
+                recordsDao.insert(
+                    RecordEntity(
+                        eventId = event.id,
+                        eventNameSnapshot = event.name,
+                        groupIdSnapshot = group.id,
+                        groupNameSnapshot = group.name,
+                        groupColorArgbSnapshot = group.colorArgb,
+                        startTime = System.currentTimeMillis()
+                    )
                 )
-            )
-            true
+                true
+            }
         }
     }
 
-    suspend fun addManualRecord(eventId: String, startTime: Long, endTime: Long): String = database.withTransaction {
-        val event = eventsDao.getById(eventId) ?: error("event not found")
-        val group = groupsDao.getById(event.groupId) ?: error("group not found")
-        val record = RecordEntity(
-            eventId = event.id,
-            eventNameSnapshot = event.name,
-            groupIdSnapshot = group.id,
-            groupNameSnapshot = group.name,
-            groupColorArgbSnapshot = group.colorArgb,
-            startTime = startTime,
-            endTime = endTime
-        )
-        recordsDao.insert(record)
-        normalizeOvernightInTransaction()
-        record.id
-    }.also { requestWidgetRefresh() }
-
-    suspend fun cloneRecord(recordId: String, eventId: String): String? = database.withTransaction {
-        val source = recordsDao.getById(recordId) ?: return@withTransaction null
-        val event = eventsDao.getById(eventId) ?: return@withTransaction null
-        if (event.isDeleted) return@withTransaction null
-        val group = groupsDao.getById(event.groupId) ?: return@withTransaction null
-
-        val cloned = RecordEntity(
-            eventId = event.id,
-            eventNameSnapshot = event.name,
-            groupIdSnapshot = group.id,
-            groupNameSnapshot = group.name,
-            groupColorArgbSnapshot = group.colorArgb,
-            startTime = source.startTime,
-            endTime = source.endTime
-        )
-        recordsDao.insert(cloned)
-
-        // 已结束记录保持现有跨天拆分规则；进行中记录保留相同开始时间和空结束时间。
-        if (cloned.endTime != null) {
-            normalizeOvernightInTransaction()
-        }
-        cloned.id
-    }.also { requestWidgetRefresh() }
-
-    suspend fun endRecord(recordId: String): Boolean = database.withTransaction {
-        val record = recordsDao.getById(recordId) ?: return@withTransaction false
-        if (record.endTime != null) return@withTransaction true
-        recordsDao.end(recordId, System.currentTimeMillis())
-        normalizeOvernightInTransaction()
-        true
-    }.also { requestWidgetRefresh() }
-
-    suspend fun deleteRunningRecord(recordId: String): Boolean = database.withTransaction {
-        val record = recordsDao.getById(recordId) ?: return@withTransaction false
-        if (record.endTime != null) return@withTransaction false
-        recordsDao.deleteById(recordId)
-        deleteNoteData(recordId)
-        true
-    }.also { requestWidgetRefresh() }
-
-    suspend fun updateRecord(recordId: String, eventId: String, startTime: Long, endTime: Long?) = database.withTransaction {
-        val event = eventsDao.getById(eventId) ?: return@withTransaction
-        val group = groupsDao.getById(event.groupId) ?: return@withTransaction
-        val existing = recordsDao.getById(recordId)
-        recordsDao.deleteById(recordId)
-        recordsDao.insert(
-            RecordEntity(
-                id = recordId,
+    suspend fun addManualRecord(eventId: String, startTime: Long, endTime: Long): String = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val event = eventsDao.getById(eventId) ?: error("event not found")
+            val group = groupsDao.getById(event.groupId) ?: error("group not found")
+            val record = RecordEntity(
                 eventId = event.id,
                 eventNameSnapshot = event.name,
                 groupIdSnapshot = group.id,
                 groupNameSnapshot = group.name,
                 groupColorArgbSnapshot = group.colorArgb,
                 startTime = startTime,
-                endTime = endTime,
-                isContinuation = false,
-                noteText = existing?.noteText ?: ""
+                endTime = endTime
             )
-        )
-        normalizeOvernightInTransaction()
+            recordsDao.insert(record)
+            normalizeOvernightInTransaction()
+            record.id
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun deleteHistoryRecord(recordId: String) = database.withTransaction {
-        recordsDao.deleteById(recordId)
-        deleteNoteData(recordId)
+    suspend fun cloneRecord(recordId: String, eventId: String): String? = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val source = recordsDao.getById(recordId) ?: return@withTransaction null
+            val event = eventsDao.getById(eventId) ?: return@withTransaction null
+            if (event.isDeleted) return@withTransaction null
+            val group = groupsDao.getById(event.groupId) ?: return@withTransaction null
+
+            val cloned = RecordEntity(
+                eventId = event.id,
+                eventNameSnapshot = event.name,
+                groupIdSnapshot = group.id,
+                groupNameSnapshot = group.name,
+                groupColorArgbSnapshot = group.colorArgb,
+                startTime = source.startTime,
+                endTime = source.endTime
+            )
+            recordsDao.insert(cloned)
+
+            // 已结束记录保持现有跨天拆分规则；进行中记录保留相同开始时间和空结束时间。
+            if (cloned.endTime != null) {
+                normalizeOvernightInTransaction()
+            }
+            cloned.id
+        }
+    }.also { requestWidgetRefresh() }
+
+    suspend fun endRecord(recordId: String): Boolean = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val record = recordsDao.getById(recordId) ?: return@withTransaction false
+            if (record.endTime != null) return@withTransaction true
+            recordsDao.end(recordId, System.currentTimeMillis())
+            normalizeOvernightInTransaction()
+            true
+        }
+    }.also { requestWidgetRefresh() }
+
+    suspend fun deleteRunningRecord(recordId: String): Boolean = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val record = recordsDao.getById(recordId) ?: return@withTransaction false
+            if (record.endTime != null) return@withTransaction false
+            recordsDao.deleteById(recordId)
+            deleteNoteData(recordId)
+            true
+        }
+    }.also { requestWidgetRefresh() }
+
+    suspend fun updateRecord(recordId: String, eventId: String, startTime: Long, endTime: Long?) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val event = eventsDao.getById(eventId) ?: return@withTransaction
+            val group = groupsDao.getById(event.groupId) ?: return@withTransaction
+            val existing = recordsDao.getById(recordId)
+            recordsDao.deleteById(recordId)
+            recordsDao.insert(
+                RecordEntity(
+                    id = recordId,
+                    eventId = event.id,
+                    eventNameSnapshot = event.name,
+                    groupIdSnapshot = group.id,
+                    groupNameSnapshot = group.name,
+                    groupColorArgbSnapshot = group.colorArgb,
+                    startTime = startTime,
+                    endTime = endTime,
+                    isContinuation = false,
+                    noteText = existing?.noteText ?: ""
+                )
+            )
+            normalizeOvernightInTransaction()
+        }
+    }.also { requestWidgetRefresh() }
+
+    suspend fun deleteHistoryRecord(recordId: String) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            recordsDao.deleteById(recordId)
+            deleteNoteData(recordId)
+        }
     }.also { requestWidgetRefresh() }
 
     suspend fun normalizeOvernight(now: Long = System.currentTimeMillis()) = database.withTransaction {
