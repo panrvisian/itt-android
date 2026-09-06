@@ -11,6 +11,7 @@ import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -458,12 +459,16 @@ fun AppRoot(viewModel: MainViewModel) {
         label = "mainScreenTranslationX"
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     translationX = mainScreenTranslationX * size.width
+                    if (isSettingsSubpage || mainScreenTranslationX != 0f) {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                        clip = true
+                    }
                 }
         ) {
             Scaffold(
@@ -575,6 +580,10 @@ fun AppRoot(viewModel: MainViewModel) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    clip = true
+                }
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding()
         ) {
