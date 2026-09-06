@@ -204,7 +204,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 颜色与层次优化：Miuix 风格浅色模式采用 `#F2F2F7` 柔和背景与 `#FFFFFF` 纯白卡片，深色模式采用 `#121212` 舒适背景与 `#1C1C1E` 提升卡片，彻底解决原全白刺眼和全黑无层次的问题；Material Design 风格严格遵循 Google 最新 Material 3（Pixel 原生设置）规范，浅色使用 `#F8F9FA` Surface 和 `#F0F4F9` Container，深色使用 `#111318` Surface 和 `#1D2024` Container，保持与 Miuix 相同的页面布局结构，仅更换 M3 UI 控件元素（Card、Switch、Slider、SegmentedControl）。在主题根节点与 `MiuixCard` 内部显式注入 `androidx.compose.material3.LocalContentColor provides colorScheme.onSurface`，彻底解决了深色模式下部分标题与选项文本因缺失全局 ContentColor 导致退回默认黑色的问题。
 - 阻尼回弹与固定标题：全应用列表与弹窗接入 MiuiX 的 `Modifier.overScrollVertical()` 阻尼弹簧回弹；设置主页“设置”大标题置于固定 Header 区域，不参与下拉拉伸，仅下方卡片列表拉伸回弹。
 - 设置二级界面 GPU 纹理层离屏渲染与视差平移：二级页面跳转开启 `CompositingStrategy.Offscreen`，将主界面与进入的二级页面分别冻结为 GPU 纹理图层，在 RenderThread 上直接进行 120Hz 视差滑移，主界面同步向左平移 25%，全程零 CPU Recomposition / Layout Pass；根容器补全主题背景色，使底栏 `layerBackdrop` 采样始终稳定，彻底消除闪黑与掉帧。
-- 性能与流畅度优化：`HorizontalPager` 开启相邻页预渲染（`beyondViewportPageCount = 1`），避免切页时实时 Compose 界面导致的卡顿掉帧；精简列表 `remember` 缓存代理与 `TimeWheel` 嵌套手势拦截；Room 数据库与文件 I/O 由原生事务执行器极速处理，带来 120Hz 满帧切页与手势响应体验。
+- 性能与流畅度优化：`HorizontalPager` 开启相邻页预渲染（`beyondViewportPageCount = 1`）；底栏 Tab 切换采用 `scrollToPage` 瞬时跳转 + 液态玻璃胶囊弹簧动画（`DampedDragAnimation`），消除了跨多页连续平移导致的 AGSL 24dp 屈光折射 Shader 与 5 页轮播同时计算引发的 10 FPS 掉帧卡顿，实现点击与切页全过程 120Hz 满帧无卡顿。
 - Monet 默认开启；未指定强调色时使用系统动态色，指定预设强调色后以该颜色生成主题。关闭 Monet 时隐藏强调色选择并恢复 MiuiX 默认明暗配色。Monet 与强调色设置由 DataStore 持久化并进入 CSV 备份。
 - 底栏可选择悬浮或贴合屏幕底部的 MiuiX 导航栏；液态玻璃默认开启且只在悬浮底栏生效。主页面只能通过底栏切换，`HorizontalPager` 的手势翻页关闭，避免与横向滑杆冲突。
 - 悬浮液态玻璃底栏使用满圆角，以 MiuiX 官方示例的双层内容遮罩实现选中项着色，并使用 `DampedDragAnimation`、组合 Backdrop、模糊、鲜艳度、AGSL lens 和高光完成切换及按压效果；相关适配代码保留 Apache-2.0 来源声明。

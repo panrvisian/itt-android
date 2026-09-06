@@ -413,6 +413,13 @@ fun AppRoot(viewModel: MainViewModel) {
         null
     }
 
+    LaunchedEffect(selectedTab) {
+        val page = tabs.indexOf(selectedTab)
+        if (page >= 0 && pagerState.currentPage != page) {
+            pagerState.scrollToPage(page)
+        }
+    }
+
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
@@ -481,7 +488,7 @@ fun AppRoot(viewModel: MainViewModel) {
                         backdrop = bottomBarBackdrop,
                         onSelected = { index ->
                             tabs.getOrNull(index)?.let(viewModel::selectTab)
-                            scope.launch { pagerState.animateScrollToPage(index) }
+                            scope.launch { pagerState.scrollToPage(index) }
                         }
                     )
                 }
