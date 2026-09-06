@@ -723,6 +723,7 @@ fun AppRoot(viewModel: MainViewModel) {
                 }
             }
         )
+    }
 
     if (showAddGroup) {
         AddGroupDialog(
@@ -878,7 +879,6 @@ fun AppRoot(viewModel: MainViewModel) {
             onDismiss = { noteEditRecord = null }
         )
     }
-}
 }
 
 @Composable
