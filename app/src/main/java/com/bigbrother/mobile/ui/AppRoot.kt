@@ -586,7 +586,7 @@ fun AppRoot(viewModel: MainViewModel) {
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
-                            beyondViewportPageCount = 1,
+                            beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
                             modifier = Modifier
