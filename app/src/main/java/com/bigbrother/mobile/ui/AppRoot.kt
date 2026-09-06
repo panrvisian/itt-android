@@ -255,6 +255,45 @@ private val onboardingSteps = listOf(
     )
 )
 
+private enum class SettingsPage {
+    Main,
+    Appearance,
+    Behavior,
+    HomeDisplay,
+    Statistics,
+    Semester,
+    Data
+}
+
+private data class SettingsMenuEntry(
+    val page: SettingsPage,
+    val title: String,
+    val summary: String,
+    val icon: ImageVector
+)
+
+private val settingsMenuEntries = listOf(
+    SettingsMenuEntry(SettingsPage.Appearance, "主题设置", "自定义更多主题选项", Icons.Rounded.Palette),
+    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充", Icons.Rounded.Swipe),
+    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局", Icons.Rounded.Home),
+    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径", Icons.Rounded.BarChart),
+    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数", Icons.Rounded.CalendarMonth),
+    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移", Icons.Rounded.ImportExport)
+)
+
+private data class AccentColorPreset(val name: String, val color: Color)
+
+private val accentColorPresets = listOf(
+    AccentColorPreset("蓝色", Color(0xFF4F6BED)),
+    AccentColorPreset("靛蓝", Color(0xFF5966D9)),
+    AccentColorPreset("紫色", Color(0xFF8E5CD9)),
+    AccentColorPreset("粉色", Color(0xFFD9588C)),
+    AccentColorPreset("红色", Color(0xFFD94C4C)),
+    AccentColorPreset("橙色", Color(0xFFE07A35)),
+    AccentColorPreset("绿色", Color(0xFF3A9B62)),
+    AccentColorPreset("青色", Color(0xFF258F9B)),
+)
+
 @Composable
 fun AppRoot(viewModel: MainViewModel) {
     val groups by viewModel.groups.collectAsStateWithLifecycle()
@@ -413,41 +452,54 @@ fun AppRoot(viewModel: MainViewModel) {
     val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val mainBottomPadding = if (useFloatingBottomBar) 120.dp else navBarBottomPadding + 16.dp
 
+    val mainScreenTranslationX by animateFloatAsState(
+        targetValue = if (isSettingsSubpage) -0.25f else 0f,
+        animationSpec = tween(220),
+        label = "mainScreenTranslationX"
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            bottomBar = {
-                AppBottomBar(
-                    selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
-                    floating = useFloatingBottomBar,
-                    liquidGlass = useLiquidGlassBottomBar,
-                    backdrop = bottomBarBackdrop,
-                    onSelected = { index ->
-                        tabs.getOrNull(index)?.let(viewModel::selectTab)
-                        scope.launch { pagerState.animateScrollToPage(index) }
-                    }
-                )
-            }
-        ) { padding ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
-                CompositionLocalProvider(
-                    LocalComponentAlpha provides settings.componentAlpha,
-                    LocalGlassEffect provides settings.glassEffectEnabled,
-                    LocalMainBottomBarPadding provides mainBottomPadding
-                ) {
-                    HorizontalPager(
-                        state = pagerState,
-                        pageSpacing = 0.dp,
-                        beyondViewportPageCount = 1,
-                        overscrollEffect = null,
-                        userScrollEnabled = !isSettingsSubpage,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
-                            .statusBarsPadding()
-                            .then(if (bottomBarBackdrop != null && !isSettingsSubpage) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
-                    ) { page ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = mainScreenTranslationX * size.width
+                }
+        ) {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                bottomBar = {
+                    AppBottomBar(
+                        selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
+                        floating = useFloatingBottomBar,
+                        liquidGlass = useLiquidGlassBottomBar,
+                        backdrop = bottomBarBackdrop,
+                        onSelected = { index ->
+                            tabs.getOrNull(index)?.let(viewModel::selectTab)
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        }
+                    )
+                }
+            ) { padding ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
+                    CompositionLocalProvider(
+                        LocalComponentAlpha provides settings.componentAlpha,
+                        LocalGlassEffect provides settings.glassEffectEnabled,
+                        LocalMainBottomBarPadding provides mainBottomPadding
+                    ) {
+                        HorizontalPager(
+                            state = pagerState,
+                            pageSpacing = 0.dp,
+                            beyondViewportPageCount = 1,
+                            overscrollEffect = null,
+                            userScrollEnabled = !isSettingsSubpage,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
+                                .statusBarsPadding()
+                                .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
+                        ) { page ->
                         val tab = tabs[page]
                         Box(modifier = Modifier.fillMaxSize()) {
                             when (tab) {
@@ -581,7 +633,6 @@ fun AppRoot(viewModel: MainViewModel) {
                 }
             }
         )
-    }
 
     if (showAddGroup) {
         AddGroupDialog(
@@ -737,6 +788,8 @@ fun AppRoot(viewModel: MainViewModel) {
             onDismiss = { noteEditRecord = null }
         )
     }
+}
+}
 }
 
 @Composable
@@ -1792,44 +1845,6 @@ private fun formatPercentage(part: Duration, total: Duration): String {
     val percentage = part.toMillis().toDouble() * 100.0 / totalMillis.toDouble()
     return java.lang.String.format(java.util.Locale.getDefault(), "%.1f%%", percentage)
 }
-private enum class SettingsPage {
-    Main,
-    Appearance,
-    Behavior,
-    HomeDisplay,
-    Statistics,
-    Semester,
-    Data
-}
-
-private data class SettingsMenuEntry(
-    val page: SettingsPage,
-    val title: String,
-    val summary: String,
-    val icon: ImageVector
-)
-
-private val settingsMenuEntries = listOf(
-    SettingsMenuEntry(SettingsPage.Appearance, "主题设置", "自定义更多主题选项", Icons.Rounded.Palette),
-    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充", Icons.Rounded.Swipe),
-    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局", Icons.Rounded.Home),
-    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径", Icons.Rounded.BarChart),
-    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数", Icons.Rounded.CalendarMonth),
-    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移", Icons.Rounded.ImportExport)
-)
-
-private data class AccentColorPreset(val name: String, val color: Color)
-
-private val accentColorPresets = listOf(
-    AccentColorPreset("蓝色", Color(0xFF4F6BED)),
-    AccentColorPreset("靛蓝", Color(0xFF5966D9)),
-    AccentColorPreset("紫色", Color(0xFF8E5CD9)),
-    AccentColorPreset("粉色", Color(0xFFD9588C)),
-    AccentColorPreset("红色", Color(0xFFD94C4C)),
-    AccentColorPreset("橙色", Color(0xFFE07A35)),
-    AccentColorPreset("绿色", Color(0xFF3A9B62)),
-    AccentColorPreset("青色", Color(0xFF258F9B)),
-)
 
 @Composable
 private fun SettingsMainScreen(
@@ -4489,6 +4504,7 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
+
 
 
 
