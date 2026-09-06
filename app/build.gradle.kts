@@ -13,8 +13,8 @@ android {
         applicationId = "com.bigbrother.mobile"
         minSdk = 31
         targetSdk = 37
-        versionCode = 16
-        versionName = "2.11"
+        versionCode = 30
+        versionName = "2.25"
     }
 
     buildTypes {

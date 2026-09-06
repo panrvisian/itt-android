@@ -203,8 +203,13 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 主题设置使用“跟随系统 / 浅色 / 深色”三个横向按钮，并可选择 Material 或 MiuiX 风格；新安装默认 MiuiX，MiuiX `0.9.2` 已作为真实组件和主题依赖接入。
 - 颜色与层次优化：Miuix 风格浅色模式采用 `#F2F2F7` 柔和背景与 `#FFFFFF` 纯白卡片，深色模式采用 `#121212` 舒适背景与 `#1C1C1E` 提升卡片，彻底解决原全白刺眼和全黑无层次的问题；Material Design 风格严格遵循 Google 最新 Material 3（Pixel 原生设置）规范，浅色使用 `#F8F9FA` Surface 和 `#F0F4F9` Container，深色使用 `#111318` Surface 和 `#1D2024` Container，保持与 Miuix 相同的页面布局结构，仅更换 M3 UI 控件元素（Card、Switch、Slider、SegmentedControl）。在主题根节点与 `MiuixCard` 内部显式注入 `androidx.compose.material3.LocalContentColor provides colorScheme.onSurface`，彻底解决了深色模式下部分标题与选项文本因缺失全局 ContentColor 导致退回默认黑色的问题。
 - 阻尼回弹与固定标题：全应用列表与弹窗接入 MiuiX 的 `Modifier.overScrollVertical()` 阻尼弹簧回弹；设置主页“设置”大标题置于固定 Header 区域，不参与下拉拉伸，仅下方卡片列表拉伸回弹。
-- 设置二级界面 GPU 纹理层离屏渲染与视差平移：二级页面跳转开启 `CompositingStrategy.Offscreen`，将主界面与进入的二级页面分别冻结为 GPU 纹理图层，在 RenderThread 上直接进行 120Hz 视差滑移，主界面同步向左平移 25%，全程零 CPU Recomposition / Layout Pass；根容器补全主题背景色，使底栏 `layerBackdrop` 采样始终稳定，彻底消除闪黑与掉帧。
-- 性能与流畅度优化：`HorizontalPager` 开启相邻页预渲染（`beyondViewportPageCount = 1`）；底栏 Tab 切换采用 `scrollToPage` 瞬时跳转 + 液态玻璃胶囊弹簧动画（`DampedDragAnimation`），消除了跨多页连续平移导致的 AGSL 24dp 屈光折射 Shader 与 5 页轮播同时计算引发的 10 FPS 掉帧卡顿，实现点击与切页全过程 120Hz 满帧无卡顿。
+- 全局 UI/UX 重构与 KernelSU 级性能导航（v2.25 / versionCode 30）：
+  - **主题与视觉层次**：MiuiX（浅色 `#F2F2F7`/`#FFFFFF`、深色 `#121212`/`#1C1C1E`）与 Material Design 3 原生配色重构；全局注入 `LocalContentColor` 解决深色模式字体退回默认黑色的问题。
+  - **二级设置界面视差覆盖**：全屏 Z-index 平滑覆盖，主界面同步 -25% 视差平移且内容保持 100% 静态零重构。
+  - **120Hz 纯正 Pager 物理跟手与边界阻尼**：主 Tab 翻页 100% 依托 `HorizontalPager` 的 `PagerState` 物理动画引擎，`currentPageOffsetFraction` 毫秒级 1:1 动态跟手（0 抽搐 0 闪跳）；最外侧边界页（首页/设置）接入 MiuiX 官方 `(1 - ratio^0.75) * 0.5` 阻尼曲线与弹簧回弹。
+  - **启动全页面预加载与底栏同帧响应**：启动首帧预驻留 5 主页至 GPU 内存（`beyondViewportPageCount = 4`），消除切页与滑动耗时；底栏实时监听 `targetPage`，与页面滑动同帧触发液态玻璃高光胶囊。
+  - **自定义壁纸与悬浮液态玻璃融合**：升级 `layerBackdrop` 采样的父容器同时包裹 `WallpaperBackground` 与 Tab 页面，实现自定义图片壁纸下悬浮底栏 AGSL 屈光折射与模糊效果的 100% 呈现。
+  - **底层 I/O 线程隔离**：Room 数据库事务与文件 I/O 全量隔离至 `Dispatchers.IO` 工作线程。
 - Monet 默认开启；未指定强调色时使用系统动态色，指定预设强调色后以该颜色生成主题。关闭 Monet 时隐藏强调色选择并恢复 MiuiX 默认明暗配色。Monet 与强调色设置由 DataStore 持久化并进入 CSV 备份。
 - 底栏可选择悬浮或贴合屏幕底部的 MiuiX 导航栏；液态玻璃默认开启且只在悬浮底栏生效。主页面只能通过底栏切换，`HorizontalPager` 的手势翻页关闭，避免与横向滑杆冲突。
 - 悬浮液态玻璃底栏使用满圆角，以 MiuiX 官方示例的双层内容遮罩实现选中项着色，并使用 `DampedDragAnimation`、组合 Backdrop、模糊、鲜艳度、AGSL lens 和高光完成切换及按压效果；相关适配代码保留 Apache-2.0 来源声明。

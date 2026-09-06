@@ -15,7 +15,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -28,7 +32,9 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.ScrollableDefaults
@@ -416,12 +422,12 @@ fun AppRoot(viewModel: MainViewModel) {
     LaunchedEffect(selectedTab) {
         val page = tabs.indexOf(selectedTab)
         if (page >= 0 && pagerState.currentPage != page) {
-            pagerState.scrollToPage(page)
+            pagerState.animateScrollToPage(page)
         }
     }
 
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }
+        snapshotFlow { pagerState.targetPage }
             .distinctUntilChanged()
             .collect { page ->
                 tabs.getOrNull(page)?.let { if (it != selectedTab) viewModel.selectTab(it) }
@@ -457,6 +463,54 @@ fun AppRoot(viewModel: MainViewModel) {
         }
     }
 
+    var boundaryOverscrollOffset by remember { mutableFloatStateOf(0f) }
+    val animatedBoundaryOffset by animateFloatAsState(
+        targetValue = boundaryOverscrollOffset,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioLowBouncy
+        ),
+        label = "animatedBoundaryOffset"
+    )
+
+    val boundaryNestedScrollConnection = remember(pagerState, isSettingsSubpage) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (isSettingsSubpage || available.x == 0f) return Offset.Zero
+
+                val currentPage = pagerState.currentPage
+                val isAtLeftBoundary = currentPage == 0 && available.x > 0
+                val isAtRightBoundary = currentPage == tabs.lastIndex && available.x < 0
+
+                if (isAtLeftBoundary || isAtRightBoundary || boundaryOverscrollOffset != 0f) {
+                    val maxBound = 1080f
+                    val ratio = (kotlin.math.abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
+                    val factor = (1f - Math.pow(ratio.toDouble(), 0.75).toFloat()) * 0.5f
+                    val delta = available.x * factor.coerceAtLeast(0.05f)
+
+                    boundaryOverscrollOffset = if (currentPage == 0) {
+                        (boundaryOverscrollOffset + delta).coerceAtLeast(0f)
+                    } else if (currentPage == tabs.lastIndex) {
+                        (boundaryOverscrollOffset + delta).coerceAtMost(0f)
+                    } else {
+                        0f
+                    }
+                    return Offset(available.x, 0f)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                boundaryOverscrollOffset = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
     val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val mainBottomPadding = if (useFloatingBottomBar) 120.dp else navBarBottomPadding + 16.dp
 
@@ -479,7 +533,7 @@ fun AppRoot(viewModel: MainViewModel) {
                 }
         ) {
             Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
+                containerColor = Color.Transparent,
                 bottomBar = {
                     AppBottomBar(
                         selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
@@ -487,13 +541,21 @@ fun AppRoot(viewModel: MainViewModel) {
                         liquidGlass = useLiquidGlassBottomBar,
                         backdrop = bottomBarBackdrop,
                         onSelected = { index ->
-                            tabs.getOrNull(index)?.let(viewModel::selectTab)
-                            scope.launch { pagerState.scrollToPage(index) }
+                            tabs.getOrNull(index)?.let { tab ->
+                                viewModel.selectTab(tab)
+                                scope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            }
                         }
                     )
                 }
             ) { padding ->
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
+                ) {
                     WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
                     CompositionLocalProvider(
                         LocalComponentAlpha provides settings.componentAlpha,
@@ -503,74 +565,86 @@ fun AppRoot(viewModel: MainViewModel) {
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
-                            beyondViewportPageCount = 1,
+                            beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
                                 .statusBarsPadding()
-                                .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
+                                .nestedScroll(boundaryNestedScrollConnection)
+                                .graphicsLayer {
+                                    translationX = animatedBoundaryOffset
+                                }
                         ) { page ->
-                        val tab = tabs[page]
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            when (tab) {
-                                AppTab.Home -> HomeScreen(
-                                    viewModel = viewModel,
-                                    settings = settings,
-                                    groups = visibleGroups,
-                                    events = visibleEvents,
-                                    eventsByGroup = eventsByGroup,
-                                    eventRecordCounts = eventRecordCounts,
-                                    records = records,
-                                    onEventClick = { selectedEvent = it },
-                                    onRecordClick = { selectedRecord = it },
-                                    onRecordEnd = { viewModel.endRecord(it.id) },
-                                    onAddEventForGroup = { groupId ->
-                                        showAddEventGroupId = groupId
-                                        showAddEvent = true
-                                    },
-                                    onAddGroup = { showAddGroup = true },
-                                    onGroupLongPress = { selectedGroup = it },
-                                    onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                                )
-                                AppTab.Timeline -> TimelineScreen(
-                                    viewModel = viewModel,
-                                    settings = settings,
-                                    records = records,
-                                    notedRecordIds = notedRecordIds,
-                                    onRecordClick = { selectedRecord = it },
-                                    onAddManualRecord = { manualRecordDate = it },
-                                    onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                                )
-                                AppTab.Stats -> StatsScreen(
-                                    settings = settings,
-                                    events = visibleEvents,
-                                    records = records,
-                                    range = statsRange,
-                                    date = statsDate,
-                                    onRangeChange = viewModel::setStatsRange,
-                                    onDateChange = viewModel::setStatsDate,
-                                    onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                                )
-                                AppTab.Notes -> NotesScreen(
-                                    notedRecords = notedRecords,
-                                    imageRecordIds = imageRecordIds,
-                                    date = notesDate,
-                                    onDateChange = viewModel::setNotesDate,
-                                    onOpen = openNote,
-                                    onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                                )
-                                AppTab.Settings -> SettingsMainScreen(
-                                    onOpenSubpage = { activeSettingsPageName = it.name },
-                                    onRestartOnboarding = {
-                                        onboardingHandledThisSession = false
-                                        onboardingStepIndex = 0
-                                    },
-                                    onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                                )
+                            val tab = tabs[page]
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        clip = true
+                                    }
+                            ) {
+                                when (tab) {
+                                    AppTab.Home -> HomeScreen(
+                                        viewModel = viewModel,
+                                        settings = settings,
+                                        groups = visibleGroups,
+                                        events = visibleEvents,
+                                        eventsByGroup = eventsByGroup,
+                                        eventRecordCounts = eventRecordCounts,
+                                        records = records,
+                                        onEventClick = { selectedEvent = it },
+                                        onRecordClick = { selectedRecord = it },
+                                        onRecordEnd = { viewModel.endRecord(it.id) },
+                                        onAddEventForGroup = { groupId ->
+                                            showAddEventGroupId = groupId
+                                            showAddEvent = true
+                                        },
+                                        onAddGroup = { showAddGroup = true },
+                                        onGroupLongPress = { selectedGroup = it },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Timeline -> TimelineScreen(
+                                        viewModel = viewModel,
+                                        settings = settings,
+                                        records = records,
+                                        notedRecordIds = notedRecordIds,
+                                        onRecordClick = { selectedRecord = it },
+                                        onAddManualRecord = { manualRecordDate = it },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Stats -> StatsScreen(
+                                        settings = settings,
+                                        events = visibleEvents,
+                                        records = records,
+                                        range = statsRange,
+                                        date = statsDate,
+                                        onRangeChange = viewModel::setStatsRange,
+                                        onDateChange = viewModel::setStatsDate,
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Notes -> NotesScreen(
+                                        notedRecords = notedRecords,
+                                        imageRecordIds = imageRecordIds,
+                                        date = notesDate,
+                                        onDateChange = viewModel::setNotesDate,
+                                        onOpen = openNote,
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Settings -> SettingsMainScreen(
+                                        onOpenSubpage = { activeSettingsPageName = it.name },
+                                        onRestartOnboarding = {
+                                            onboardingHandledThisSession = false
+                                            onboardingStepIndex = 0
+                                        },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                }
                             }
                         }
+
                     }
                 }
             }
@@ -804,7 +878,6 @@ fun AppRoot(viewModel: MainViewModel) {
             onDismiss = { noteEditRecord = null }
         )
     }
-}
 }
 }
 
