@@ -39,11 +39,11 @@ enum class AppTab {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: AppRepository = (application as BigBrotherApp).container.repository
 
-    val groups = repository.groups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val events = repository.events.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val records = repository.records.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val settings = repository.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+    val groups = repository.groups.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val events = repository.events.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val records = repository.records.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val settings = repository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val onboardingCompleted = repository.onboardingCompleted
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -222,6 +222,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUse24Hour(use24Hour: Boolean) {
         viewModelScope.launch { repository.setSettings { it.copy(use24Hour = use24Hour) } }
+    }
+
+    fun dismissHomeHint() {
+        viewModelScope.launch { repository.setSettings { it.copy(homeHintDismissed = true) } }
     }
 
     fun setTotalDurationMode(mode: TotalDurationMode) {

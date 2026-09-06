@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,6 +63,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
@@ -96,13 +98,17 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ColorLens
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.ImportExport
@@ -135,13 +141,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
@@ -163,6 +174,8 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -565,13 +578,12 @@ fun AppRoot(viewModel: MainViewModel) {
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
-                            beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
+                            beyondViewportPageCount = 0,
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
-                                .statusBarsPadding()
                                 .nestedScroll(boundaryNestedScrollConnection)
                                 .graphicsLayer {
                                     translationX = animatedBoundaryOffset
@@ -604,7 +616,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                         },
                                         onAddGroup = { showAddGroup = true },
                                         onGroupLongPress = { selectedGroup = it },
-                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                        onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Timeline -> TimelineScreen(
                                         viewModel = viewModel,
@@ -613,7 +625,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                         notedRecordIds = notedRecordIds,
                                         onRecordClick = { selectedRecord = it },
                                         onAddManualRecord = { manualRecordDate = it },
-                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                        onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Stats -> StatsScreen(
                                         settings = settings,
@@ -623,7 +635,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                         date = statsDate,
                                         onRangeChange = viewModel::setStatsRange,
                                         onDateChange = viewModel::setStatsDate,
-                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                        onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Notes -> NotesScreen(
                                         notedRecords = notedRecords,
@@ -631,7 +643,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                         date = notesDate,
                                         onDateChange = viewModel::setNotesDate,
                                         onOpen = openNote,
-                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                        onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Settings -> SettingsMainScreen(
                                         onOpenSubpage = { activeSettingsPageName = it.name },
@@ -639,7 +651,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                             onboardingHandledThisSession = false
                                             onboardingStepIndex = 0
                                         },
-                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                        onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                 }
                             }
@@ -1038,68 +1050,442 @@ private fun HomeScreen(
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
-    val favorites = remember(events) { events.filter { it.isFavorite && !it.isDeleted } }
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().overScrollVertical(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp,
-            top = 16.dp,
-            end = 16.dp,
-            bottom = LocalMainBottomBarPadding.current
-        )
-    ) {
-        if (settings.showClockSection) {
-            item {
-                CurrentTimeSection(
+    val collapseFractionProvider = remember {
+        {
+            if (listState.firstVisibleItemIndex > 0) {
+                1f
+            } else {
+                val scrollPx = listState.firstVisibleItemScrollOffset.toFloat()
+                val thresholdPx = with(density) { 52.dp.toPx() }
+                (scrollPx / thresholdPx).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    var selectedGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    val displayGroups = remember(groups, selectedGroupId) {
+        if (selectedGroupId == null) {
+            groups
+        } else {
+            groups.filter { it.id == selectedGroupId }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().overScrollVertical(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp,
+                top = statusBarTop + 52.dp,
+                end = 16.dp,
+                bottom = LocalMainBottomBarPadding.current
+            )
+        ) {
+            item(key = "home_large_title", contentType = "large_title") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 4.dp)
+                        .graphicsLayer {
+                            alpha = (1f - collapseFractionProvider() * 1.5f).coerceIn(0f, 1f)
+                        }
+                ) {
+                    Text(
+                        text = "Individual Time Trial",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            item(key = "home_dashboard", contentType = "dashboard_widgets") {
+                HomeDashboardWidgets(
+                    running = running,
                     settings = settings,
+                    onRecordClick = onRecordClick,
+                    onRecordEnd = onRecordEnd,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
                         onRegisterOnboardingTarget(OnboardingTarget.HomeEvents, coordinates.boundsInRoot())
                     }
                 )
             }
-        }
-        if (settings.showRunningSection) {
-            item {
-                RunningRecordsSection(
-                    running = running,
-                    vibrationEnabled = settings.vibrationEnabled,
-                    onRecordClick = onRecordClick,
-                    onRecordEnd = onRecordEnd
-                )
-            }
-        }
-        if (settings.showFavoriteSection) {
-            item {
-                SectionCard(title = "\u6536\u85CF / \u5E38\u7528") {
-                    if (favorites.isEmpty()) {
-                        Text("\u628A\u5E38\u7528\u4E8B\u4EF6\u70B9\u661F\u6807\u540E\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        EventGrid(
-                            events = favorites,
-                            groups = groups,
-                            settings = settings,
-                            eventRecordCounts = eventRecordCounts,
-                            onEventClick = onEventClick,
-                            onEventLongPress = viewModel::startEvent
-                        )
-                    }
+
+            if (!settings.homeHintDismissed) {
+                item(key = "home_hint", contentType = "hint_banner") {
+                    HomeHintBanner(
+                        onDismiss = { viewModel.dismissHomeHint() }
+                    )
                 }
             }
-        }
-        if (settings.showGroupedSection) {
-            items(groups, key = { it.id }) { group ->
-                GroupSection(
+
+            item(key = "home_group_selector", contentType = "group_selector") {
+                HorizontalGroupSelectorBar(
+                    groups = groups,
+                    selectedGroupId = selectedGroupId,
+                    onSelectGroup = { selectedGroupId = it },
+                    onAddGroup = onAddGroup
+                )
+            }
+
+            items(
+                items = displayGroups,
+                key = { "group_${it.id}" },
+                contentType = { "group_card" }
+            ) { group ->
+                GroupEventBlockCard(
                     group = group,
                     settings = settings,
                     events = eventsByGroup[group.id].orEmpty(),
                     eventRecordCounts = eventRecordCounts,
                     onEventClick = onEventClick,
                     onEventLongPress = viewModel::startEvent,
-                    onAddEvent = onAddEventForGroup,
-                    onAddGroup = onAddGroup,
+                    onAddEvent = { onAddEventForGroup(group.id) },
                     onGroupLongPress = onGroupLongPress
+                )
+            }
+        }
+
+        HomeTopBar(
+            collapseFractionProvider = collapseFractionProvider,
+            statusBarTop = statusBarTop,
+            onAddEvent = { onAddEventForGroup(selectedGroupId) },
+            onAddGroup = onAddGroup
+        )
+    }
+}
+
+@Composable
+private fun HomeTopBar(
+    collapseFractionProvider: () -> Float,
+    statusBarTop: Dp,
+    onAddEvent: () -> Unit,
+    onAddGroup: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val fraction = collapseFractionProvider()
+                drawRect(surfaceColor.copy(alpha = fraction))
+                if (fraction > 0.01f) {
+                    drawLine(
+                        color = dividerColor.copy(alpha = 0.35f * fraction),
+                        start = Offset(0f, size.height),
+                        end = Offset(size.width, size.height),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+            }
+    ) {
+        Spacer(modifier = Modifier.height(statusBarTop))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(modifier = Modifier.width(40.dp))
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { alpha = collapseFractionProvider() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Individual Time Trial",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Box(
+                modifier = Modifier.width(40.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                IconButton(
+                    onClick = { menuExpanded = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    AppIcon(R.drawable.ic_add, contentDescription = "添加", modifier = Modifier.size(24.dp))
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clip(RoundedCornerShape(16.dp))
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("新建事件", style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { AppIcon(R.drawable.ic_add, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            menuExpanded = false
+                            onAddEvent()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("新建分组", style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            menuExpanded = false
+                            onAddGroup()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeDashboardWidgets(
+    running: List<RecordEntity>,
+    settings: AppSettings,
+    onRecordClick: (RecordEntity) -> Unit,
+    onRecordEnd: (RecordEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val now = produceClock()
+    val activeRecord = running.firstOrNull()
+    val haptics = LocalHapticFeedback.current
+
+    Row(
+        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1.15f)
+                .fillMaxHeight()
+        ) {
+            val cardColor = if (activeRecord != null) {
+                colorFromArgb(activeRecord.groupColorArgbSnapshot)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            }
+
+            val cardContentColor = if (activeRecord != null) {
+                if (cardColor.luminance() > 0.5f) Color.Black else Color.White
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+
+            MiuixCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .heightIn(min = 168.dp),
+                cornerRadius = 22.dp,
+                colors = MiuixCardDefaults.defaultColors(
+                    color = cardColor,
+                    contentColor = cardContentColor
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(22.dp))
+                        .pointerInput(activeRecord) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    if (activeRecord != null) {
+                                        if (settings.vibrationEnabled) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        onRecordEnd(activeRecord)
+                                    }
+                                }
+                            )
+                        }
+                        .padding(16.dp)
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .size(110.dp)
+                            .align(Alignment.BottomEnd)
+                            .graphicsLayer {
+                                translationX = 22.dp.toPx()
+                                translationY = 22.dp.toPx()
+                            }
+                    ) {
+                        val strokeWidth = 8.dp.toPx()
+                        val arcColor = cardContentColor.copy(alpha = 0.22f)
+
+                        drawCircle(
+                            color = arcColor,
+                            radius = size.width / 2f - strokeWidth / 2f,
+                            style = Stroke(width = strokeWidth)
+                        )
+
+                        if (activeRecord != null) {
+                            val checkPath = Path().apply {
+                                moveTo(size.width * 0.32f, size.height * 0.50f)
+                                lineTo(size.width * 0.46f, size.height * 0.64f)
+                                lineTo(size.width * 0.68f, size.height * 0.38f)
+                            }
+                            drawPath(
+                                path = checkPath,
+                                color = arcColor,
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (activeRecord != null) "进行中" else "未开始",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = cardContentColor.copy(alpha = 0.8f)
+                        )
+
+                        Text(
+                            text = activeRecord?.eventNameSnapshot ?: "空闲",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = cardContentColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Text(
+                            text = if (activeRecord != null) {
+                                activeRecord.groupNameSnapshot
+                            } else {
+                                "长按事件以开始"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Normal,
+                            color = cardContentColor.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            MiuixCard(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                cornerRadius = 22.dp,
+                colors = MiuixCardDefaults.defaultColors(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "当前时间",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = TimeUtils.formatClock(now, false, settings.use24Hour),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            MiuixCard(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                cornerRadius = 22.dp,
+                colors = MiuixCardDefaults.defaultColors(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "已进行",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = if (activeRecord != null) {
+                            formatRunning(activeRecord.startTime, now)
+                        } else {
+                            "00:00"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeHintBanner(
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "长按0.5s开始，进行中长按暂停",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭提示",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -1107,49 +1493,142 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun CurrentTimeSection(settings: AppSettings, modifier: Modifier = Modifier) {
-    val now = produceClock()
-    SectionCard(
-        modifier = modifier,
-        title = "Individual Time Trial",
-        titleStyle = MaterialTheme.typography.headlineMedium,
-        titleAlign = TextAlign.Center
+private fun HorizontalGroupSelectorBar(
+    groups: List<GroupEntity>,
+    selectedGroupId: String?,
+    onSelectGroup: (String?) -> Unit,
+    onAddGroup: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            TimeUtils.formatClock(now, settings.showDateInClock, settings.use24Hour),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text("\u77ED\u6309\u7BA1\u7406\uFF0C\u957F\u6309 0.5 \u79D2\u5F00\u59CB\u8BA1\u65F6\uFF0C\u957F\u6309\u8FDB\u884C\u4E2D\u8BB0\u5F55\u7ED3\u675F\u8BA1\u65F6", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val scrollState = rememberScrollState()
+
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GroupChipItem(
+                name = "全部",
+                colorArgb = null,
+                isSelected = selectedGroupId == null,
+                onClick = { onSelectGroup(null) }
+            )
+
+            groups.forEach { group ->
+                GroupChipItem(
+                    name = group.name,
+                    colorArgb = group.colorArgb,
+                    isSelected = selectedGroupId == group.id,
+                    onClick = { onSelectGroup(group.id) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        IconButton(
+            onClick = onAddGroup,
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(12.dp)
+                )
+        ) {
+            AppIcon(R.drawable.ic_add, contentDescription = "新建分组", modifier = Modifier.size(20.dp))
+        }
     }
 }
 
 @Composable
-private fun RunningRecordsSection(
-    running: List<RecordEntity>,
-    vibrationEnabled: Boolean,
-    onRecordClick: (RecordEntity) -> Unit,
-    onRecordEnd: (RecordEntity) -> Unit
+private fun GroupChipItem(
+    name: String,
+    colorArgb: Int?,
+    isSelected: Boolean,
+    onClick: () -> Unit
 ) {
-    val now = produceClock()
-    SectionCard(title = "\u8FDB\u884C\u4E2D") {
-        if (running.isEmpty()) {
-            Text("\u6682\u65E0\u8FDB\u884C\u4E2D\u8BB0\u5F55", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                running.forEach { record ->
-                    RecordCard(
-                        title = record.eventNameSnapshot,
-                        subtitle = "\u5F00\u59CB ${TimeUtils.formatDateTime(record.startTime)} \u00B7 ${formatRunning(record.startTime, now)}",
-                        color = colorFromArgb(record.groupColorArgbSnapshot),
-                        vibrationEnabled = vibrationEnabled,
-                        onClick = { onRecordClick(record) },
-                        onLongPress = { onRecordEnd(record) }
-                    )
-                }
+    val chipBg = if (isSelected) {
+        colorArgb?.let { colorFromArgb(it) } ?: MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+
+    val chipContentColor = if (isSelected) {
+        if (chipBg.luminance() > 0.5f) Color.Black else Color.White
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(chipBg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = chipContentColor
+        )
+    }
+}
+
+@Composable
+private fun GroupEventBlockCard(
+    group: GroupEntity,
+    settings: AppSettings,
+    events: List<EventEntity>,
+    eventRecordCounts: Map<String, Int>,
+    onEventClick: (EventEntity) -> Unit,
+    onEventLongPress: (String) -> Unit,
+    onAddEvent: () -> Unit,
+    onGroupLongPress: (GroupEntity) -> Unit
+) {
+    SectionCard(
+        title = group.name,
+        onTitleLongPress = { onGroupLongPress(group) },
+        trailing = {
+            IconButton(
+                onClick = onAddEvent,
+                modifier = Modifier.size(32.dp)
+            ) {
+                AppIcon(R.drawable.ic_add, contentDescription = "新建事件", modifier = Modifier.size(20.dp))
             }
+        }
+    ) {
+        if (events.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "无事件",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            EventGrid(
+                events = events,
+                groups = listOf(group),
+                settings = settings,
+                eventRecordCounts = eventRecordCounts,
+                showGroupSubtitle = false,
+                onEventClick = onEventClick,
+                onEventLongPress = onEventLongPress
+            )
         }
     }
 }
@@ -1176,14 +1655,17 @@ private fun EventGrid(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
+            ) {
                 row.forEach { cell ->
                     val event = cell.event
                     val group = groupMap[event.groupId]
                     Box(modifier = Modifier.weight(cell.span.toFloat()).fillMaxHeight()) {
                         LongPressEventTile(
                             title = event.name,
-                            subtitle = if (showGroupSubtitle) group?.name ?: "\u672A\u5206\u7EC4" else null,
+                            subtitle = if (showGroupSubtitle) group?.name ?: "未分组" else null,
                             color = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt()),
                             modifier = Modifier.fillMaxWidth().fillMaxHeight().heightIn(min = if (showGroupSubtitle) 64.dp else 52.dp),
                             vibrationEnabled = settings.vibrationEnabled,
@@ -1235,85 +1717,6 @@ private fun buildEventRows(events: List<EventEntity>, columns: Int): List<List<E
     if (current.isNotEmpty()) rows += current
     return rows
 }
-
-@Composable
-private fun GroupSection(
-    group: GroupEntity,
-    settings: AppSettings,
-    events: List<EventEntity>,
-    eventRecordCounts: Map<String, Int>,
-    onEventClick: (EventEntity) -> Unit,
-    onEventLongPress: (String) -> Unit,
-    onAddEvent: (String) -> Unit,
-    onAddGroup: () -> Unit,
-    onGroupLongPress: (GroupEntity) -> Unit
-) {
-    var expanded by rememberSaveable(group.id) { mutableStateOf(true) }
-    if (!expanded) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)
-            )
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    group.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f).pointerInput(group.id) {
-                        detectTapGestures(
-                            onTap = { expanded = true },
-                            onLongPress = { onGroupLongPress(group) }
-                        )
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                IconButton(onClick = { onAddEvent(group.id) }) { AppIcon(R.drawable.ic_add, "添加") }
-                TextButton(onClick = { expanded = true }) { Text("展开") }
-            }
-        }
-    } else {
-        SectionCard(
-            title = group.name,
-            onTitleClick = { expanded = false },
-            onTitleLongPress = { onGroupLongPress(group) },
-            trailing = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { onAddEvent(group.id) }) { AppIcon(R.drawable.ic_add, "添加") }
-                    TextButton(onClick = { expanded = false }) { Text("收起") }
-                }
-            }
-        ) {
-            if (events.isEmpty()) {
-                Text("暂无事件，点击本分组添加", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                EventGrid(
-                    events = events,
-                    groups = listOf(group),
-                    settings = settings,
-                    eventRecordCounts = eventRecordCounts,
-                    showGroupSubtitle = false,
-                    onEventClick = onEventClick,
-                    onEventLongPress = onEventLongPress
-                )
-            }
-        }
-    }
-    if (group.isSystem) {
-        Spacer(modifier = Modifier.height(8.dp))
-        IconTextButton(
-            text = "新建分组",
-            iconRes = R.drawable.ic_add,
-            onClick = onAddGroup,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
 @Composable
 private fun TimelineScreen(
     viewModel: MainViewModel,
@@ -1328,13 +1731,14 @@ private fun TimelineScreen(
     val listState = rememberLazyListState()
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
             start = 16.dp,
-            top = 16.dp,
+            top = statusBarTop + 12.dp,
             end = 16.dp,
             bottom = LocalMainBottomBarPadding.current
         )
@@ -1512,12 +1916,13 @@ private fun StatsScreen(
         }
     }
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     LazyColumn(
         modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
             start = 16.dp,
-            top = 16.dp,
+            top = statusBarTop + 12.dp,
             end = 16.dp,
             bottom = LocalMainBottomBarPadding.current
         )
@@ -1941,11 +2346,12 @@ private fun SettingsMainScreen(
     onRestartOnboarding: () -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)
+                .padding(start = 20.dp, end = 20.dp, top = statusBarTop + 12.dp, bottom = 8.dp)
         ) {
             Text(
                 "设置",
@@ -2890,11 +3296,15 @@ private fun SolidColorPaletteDialog(
     }
 }
 @Composable
-private fun AppIcon(@DrawableRes iconRes: Int, contentDescription: String?) {
+private fun AppIcon(
+    @DrawableRes iconRes: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier.size(20.dp)
+) {
     Icon(
         painter = painterResource(iconRes),
         contentDescription = contentDescription,
-        modifier = Modifier.size(20.dp)
+        modifier = modifier
     )
 }
 
