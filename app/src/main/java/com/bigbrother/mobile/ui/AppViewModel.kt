@@ -17,6 +17,7 @@ import com.bigbrother.mobile.data.NoteViewState
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
+import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.StatsRangeKind
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -161,6 +162,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { repository.setSettings { it.copy(themeMode = mode) } }
+    }
+
+    fun setUiStyle(style: UiStyle) {
+        viewModelScope.launch { repository.setSettings { it.copy(uiStyle = style) } }
+    }
+
+    fun setMonetEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(monetEnabled = enabled) } }
+    }
+
+    fun setAccentColor(colorArgb: Int?) {
+        viewModelScope.launch { repository.setSettings { it.copy(accentColorArgb = colorArgb) } }
+    }
+
+    fun setFloatingBottomBarEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(floatingBottomBarEnabled = enabled) } }
+    }
+
+    fun setLiquidGlassBottomBarEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(liquidGlassBottomBarEnabled = enabled) } }
     }
 
     fun setFontScaleMode(mode: FontScaleMode) {

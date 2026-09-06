@@ -7,13 +7,19 @@ import java.time.LocalDate
 import java.util.UUID
 
 enum class ThemeMode { System, Light, Dark }
-enum class FontScaleMode { System, Small, Medium, Large, XLarge }
+enum class UiStyle { Material, Miuix }
+enum class FontScaleMode { ExtraSmall, Small, Compact, System, Large, XLarge, ExtraLarge }
 enum class EventGridColumns { Auto, Two, Three, Four }
 enum class TotalDurationMode { Sum, Unique }
 enum class WallpaperMode { Default, Image, Solid }
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
+    val uiStyle: UiStyle = UiStyle.Miuix,
+    val monetEnabled: Boolean = true,
+    val accentColorArgb: Int? = null,
+    val floatingBottomBarEnabled: Boolean = true,
+    val liquidGlassBottomBarEnabled: Boolean = true,
     val fontScaleMode: FontScaleMode = FontScaleMode.System,
     val showClockSection: Boolean = true,
     val showRunningSection: Boolean = true,

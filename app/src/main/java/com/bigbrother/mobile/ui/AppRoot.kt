@@ -6,10 +6,23 @@ import android.net.Uri
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -19,7 +32,9 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.ScrollableDefaults
@@ -47,6 +62,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,24 +76,44 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ColorLens
+import androidx.compose.material.icons.rounded.FontDownload
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.ImportExport
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Swipe
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewDay
+import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -95,6 +133,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -107,6 +146,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -144,6 +184,7 @@ import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
+import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.GroupStat
 import com.bigbrother.mobile.domain.StatsCalculator
@@ -155,6 +196,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
+import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
+import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
@@ -163,6 +211,8 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+val LocalMainBottomBarPadding = androidx.compose.runtime.compositionLocalOf { 16.dp }
 
 enum class OnboardingTarget {
     HomeEvents,
@@ -207,9 +257,48 @@ private val onboardingSteps = listOf(
     OnboardingStep(
         tab = AppTab.Settings,
         target = OnboardingTarget.SettingsMenu,
-        title = "设置：外观与数据管理",
-        description = "这里可以调整主题、字号、壁纸等外观选项，并导入或导出备份。以后可在帮助区域重新打开本引导。",
+        title = "设置：主题与数据管理",
+        description = "这里可以切换 Material 或 MiuiX、Monet 动态色、悬浮底栏和液态玻璃，并导入或导出备份。",
     )
+)
+
+private enum class SettingsPage {
+    Main,
+    Appearance,
+    Behavior,
+    HomeDisplay,
+    Statistics,
+    Semester,
+    Data
+}
+
+private data class SettingsMenuEntry(
+    val page: SettingsPage,
+    val title: String,
+    val summary: String,
+    val icon: ImageVector
+)
+
+private val settingsMenuEntries = listOf(
+    SettingsMenuEntry(SettingsPage.Appearance, "主题设置", "自定义更多主题选项", Icons.Rounded.Palette),
+    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充", Icons.Rounded.Swipe),
+    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局", Icons.Rounded.Home),
+    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径", Icons.Rounded.BarChart),
+    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数", Icons.Rounded.CalendarMonth),
+    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移", Icons.Rounded.ImportExport)
+)
+
+private data class AccentColorPreset(val name: String, val color: Color)
+
+private val accentColorPresets = listOf(
+    AccentColorPreset("蓝色", Color(0xFF4F6BED)),
+    AccentColorPreset("靛蓝", Color(0xFF5966D9)),
+    AccentColorPreset("紫色", Color(0xFF8E5CD9)),
+    AccentColorPreset("粉色", Color(0xFFD9588C)),
+    AccentColorPreset("红色", Color(0xFFD94C4C)),
+    AccentColorPreset("橙色", Color(0xFFE07A35)),
+    AccentColorPreset("绿色", Color(0xFF3A9B62)),
+    AccentColorPreset("青色", Color(0xFF258F9B)),
 )
 
 @Composable
@@ -230,6 +319,57 @@ fun AppRoot(viewModel: MainViewModel) {
     var showAddEvent by rememberSaveable { mutableStateOf(false) }
     var showAddEventGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var manualRecordDate by remember { mutableStateOf<LocalDate?>(null) }
+    var activeSettingsPageName by rememberSaveable { mutableStateOf(SettingsPage.Main.name) }
+    var showSemesterStartDialog by rememberSaveable { mutableStateOf(false) }
+    var showWallpaperEditor by rememberSaveable { mutableStateOf(false) }
+
+    val activeSettingsPage = SettingsPage.values().firstOrNull { it.name == activeSettingsPageName } ?: SettingsPage.Main
+    val isSettingsSubpage = activeSettingsPage != SettingsPage.Main
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != AppTab.Settings) activeSettingsPageName = SettingsPage.Main.name
+    }
+
+    if (isSettingsSubpage) {
+        BackHandler { activeSettingsPageName = SettingsPage.Main.name }
+    }
+
+    val context = LocalContext.current
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
+        if (uri != null) viewModel.exportCsv(uri)
+    }
+    val importReplaceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) viewModel.importCsv(uri, false)
+    }
+    val importMergeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) viewModel.importCsv(uri, true)
+    }
+    val wallpaperLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            viewModel.setWallpaperUri(uri.toString())
+        }
+    }
+
+    if (showWallpaperEditor) {
+        WallpaperEditorDialog(
+            settings = settings,
+            viewModel = viewModel,
+            onPickWallpaper = { wallpaperLauncher.launch(arrayOf("image/*")) },
+            onDismiss = { showWallpaperEditor = false }
+        )
+    }
+    if (showSemesterStartDialog) {
+        DateWheelDialog(
+            title = "学期第一天",
+            initialDate = settings.semesterStartDate,
+            onDismiss = { showSemesterStartDialog = false },
+            onConfirm = {
+                viewModel.setSemesterStartDate(it)
+                showSemesterStartDialog = false
+            }
+        )
+    }
     var selectedEvent by remember { mutableStateOf<EventEntity?>(null) }
     var selectedGroup by remember { mutableStateOf<GroupEntity?>(null) }
     var selectedRecord by remember { mutableStateOf<RecordEntity?>(null) }
@@ -264,17 +404,33 @@ fun AppRoot(viewModel: MainViewModel) {
         if (record.noteText.isNotBlank() || record.id in notedRecordIds) noteViewRecord = record else noteEditRecord = record
     }
 
-    val tabs = remember { listOf(AppTab.Home, AppTab.Timeline, AppTab.Notes, AppTab.Stats, AppTab.Settings) }
+    val tabs = remember { appBottomBarDestinations.map { it.tab } }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0), pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
+    val useFloatingBottomBar = settings.floatingBottomBarEnabled
+    val useLiquidGlassBottomBar = useFloatingBottomBar && settings.liquidGlassBottomBarEnabled
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val bottomBarBackdrop = if (useLiquidGlassBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
+    } else {
+        null
+    }
+
+    LaunchedEffect(selectedTab) {
+        val page = tabs.indexOf(selectedTab)
+        if (page >= 0 && pagerState.currentPage != page) {
+            pagerState.animateScrollToPage(page)
+        }
+    }
 
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage to pagerState.currentPageOffsetFraction }
+        snapshotFlow { pagerState.targetPage }
             .distinctUntilChanged()
-            .collect { (page, offset) ->
-                if (abs(offset) < 0.001f) {
-                    tabs.getOrNull(page)?.let { if (it != selectedTab) viewModel.selectTab(it) }
-                }
+            .collect { page ->
+                tabs.getOrNull(page)?.let { if (it != selectedTab) viewModel.selectTab(it) }
             }
     }
 
@@ -307,144 +463,266 @@ fun AppRoot(viewModel: MainViewModel) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, tab ->
-                    val label = when (tab) {
-                        AppTab.Home -> "首页"
-                        AppTab.Timeline -> "时间轴"
-                        AppTab.Stats -> "统计"
-                        AppTab.Notes -> "备注"
-                        AppTab.Settings -> "设置"
+    var boundaryOverscrollOffset by remember { mutableFloatStateOf(0f) }
+    val animatedBoundaryOffset by animateFloatAsState(
+        targetValue = boundaryOverscrollOffset,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = Spring.DampingRatioLowBouncy
+        ),
+        label = "animatedBoundaryOffset"
+    )
+
+    val boundaryNestedScrollConnection = remember(pagerState, isSettingsSubpage) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (isSettingsSubpage || available.x == 0f) return Offset.Zero
+
+                val currentPage = pagerState.currentPage
+                val isAtLeftBoundary = currentPage == 0 && available.x > 0
+                val isAtRightBoundary = currentPage == tabs.lastIndex && available.x < 0
+
+                if (isAtLeftBoundary || isAtRightBoundary || boundaryOverscrollOffset != 0f) {
+                    val maxBound = 1080f
+                    val ratio = (kotlin.math.abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
+                    val factor = (1f - Math.pow(ratio.toDouble(), 0.75).toFloat()) * 0.5f
+                    val delta = available.x * factor.coerceAtLeast(0.05f)
+
+                    boundaryOverscrollOffset = if (currentPage == 0) {
+                        (boundaryOverscrollOffset + delta).coerceAtLeast(0f)
+                    } else if (currentPage == tabs.lastIndex) {
+                        (boundaryOverscrollOffset + delta).coerceAtMost(0f)
+                    } else {
+                        0f
                     }
-                    val icon = when (tab) {
-                        AppTab.Home -> R.drawable.ic_home
-                        AppTab.Timeline -> R.drawable.ic_timeline
-                        AppTab.Stats -> R.drawable.ic_stats
-                        AppTab.Notes -> R.drawable.ic_notes
-                        AppTab.Settings -> R.drawable.ic_settings
-                    }
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        icon = { AppIcon(icon, label) },
-                        label = { Text(label) }
-                    )
+                    return Offset(available.x, 0f)
                 }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                boundaryOverscrollOffset = 0f
+                return Velocity.Zero
             }
         }
-    ) { padding ->
+    }
+
+    val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val mainBottomPadding = if (useFloatingBottomBar) 120.dp else navBarBottomPadding + 16.dp
+
+    val mainScreenTranslationX by animateFloatAsState(
+        targetValue = if (isSettingsSubpage) -0.25f else 0f,
+        animationSpec = tween(220),
+        label = "mainScreenTranslationX"
+    )
+
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .statusBarsPadding()
+                .graphicsLayer {
+                    translationX = mainScreenTranslationX * size.width
+                    if (isSettingsSubpage || mainScreenTranslationX != 0f) {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                        clip = true
+                    }
+                }
         ) {
-            WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
-            CompositionLocalProvider(
-                LocalComponentAlpha provides settings.componentAlpha,
-                LocalGlassEffect provides settings.glassEffectEnabled
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    pageSpacing = 0.dp,
-                    modifier = Modifier.fillMaxSize()
-                ) { page ->
-                    val tab = tabs[page]
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        when (tab) {
-                            AppTab.Home -> HomeScreen(
-                                viewModel = viewModel,
-                                settings = settings,
-                                groups = visibleGroups,
-                                events = visibleEvents,
-                                eventsByGroup = eventsByGroup,
-                                eventRecordCounts = eventRecordCounts,
-                                records = records,
-                                onEventClick = { selectedEvent = it },
-                                onRecordClick = { selectedRecord = it },
-                                onRecordEnd = { viewModel.endRecord(it.id) },
-                                onAddEventForGroup = { groupId ->
-                                    showAddEventGroupId = groupId
-                                    showAddEvent = true
-                                },
-                                onAddGroup = { showAddGroup = true },
-                                onGroupLongPress = { selectedGroup = it },
-                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                            )
-                            AppTab.Timeline -> TimelineScreen(
-                                viewModel = viewModel,
-                                settings = settings,
-                                records = records,
-                                notedRecordIds = notedRecordIds,
-                                onRecordClick = { selectedRecord = it },
-                                onAddManualRecord = { manualRecordDate = it },
-                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                            )
-                            AppTab.Stats -> StatsScreen(
-                                settings = settings,
-                                events = visibleEvents,
-                                records = records,
-                                range = statsRange,
-                                date = statsDate,
-                                onRangeChange = viewModel::setStatsRange,
-                                onDateChange = viewModel::setStatsDate,
-                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                            )
-                            AppTab.Notes -> NotesScreen(
-                                notedRecords = notedRecords,
-                                imageRecordIds = imageRecordIds,
-                                date = notesDate,
-                                onDateChange = viewModel::setNotesDate,
-                                onOpen = openNote,
-                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                            )
-                            AppTab.Settings -> SettingsScreen(
-                                viewModel = viewModel,
-                                settings = settings,
-                                onRestartOnboarding = {
-                                    onboardingHandledThisSession = false
-                                    onboardingStepIndex = 0
-                                },
-                                onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
-                            )
+            Scaffold(
+                containerColor = Color.Transparent,
+                bottomBar = {
+                    AppBottomBar(
+                        selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
+                        floating = useFloatingBottomBar,
+                        liquidGlass = useLiquidGlassBottomBar,
+                        backdrop = bottomBarBackdrop,
+                        onSelected = { index ->
+                            tabs.getOrNull(index)?.let { tab ->
+                                viewModel.selectTab(tab)
+                                scope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            }
                         }
+                    )
+                }
+            ) { padding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
+                ) {
+                    WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
+                    CompositionLocalProvider(
+                        LocalComponentAlpha provides settings.componentAlpha,
+                        LocalGlassEffect provides settings.glassEffectEnabled,
+                        LocalMainBottomBarPadding provides mainBottomPadding
+                    ) {
+                        HorizontalPager(
+                            state = pagerState,
+                            pageSpacing = 0.dp,
+                            beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
+                            overscrollEffect = null,
+                            userScrollEnabled = !isSettingsSubpage,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(if (useFloatingBottomBar) Modifier else Modifier.padding(padding))
+                                .statusBarsPadding()
+                                .nestedScroll(boundaryNestedScrollConnection)
+                                .graphicsLayer {
+                                    translationX = animatedBoundaryOffset
+                                }
+                        ) { page ->
+                            val tab = tabs[page]
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        clip = true
+                                    }
+                            ) {
+                                when (tab) {
+                                    AppTab.Home -> HomeScreen(
+                                        viewModel = viewModel,
+                                        settings = settings,
+                                        groups = visibleGroups,
+                                        events = visibleEvents,
+                                        eventsByGroup = eventsByGroup,
+                                        eventRecordCounts = eventRecordCounts,
+                                        records = records,
+                                        onEventClick = { selectedEvent = it },
+                                        onRecordClick = { selectedRecord = it },
+                                        onRecordEnd = { viewModel.endRecord(it.id) },
+                                        onAddEventForGroup = { groupId ->
+                                            showAddEventGroupId = groupId
+                                            showAddEvent = true
+                                        },
+                                        onAddGroup = { showAddGroup = true },
+                                        onGroupLongPress = { selectedGroup = it },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Timeline -> TimelineScreen(
+                                        viewModel = viewModel,
+                                        settings = settings,
+                                        records = records,
+                                        notedRecordIds = notedRecordIds,
+                                        onRecordClick = { selectedRecord = it },
+                                        onAddManualRecord = { manualRecordDate = it },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Stats -> StatsScreen(
+                                        settings = settings,
+                                        events = visibleEvents,
+                                        records = records,
+                                        range = statsRange,
+                                        date = statsDate,
+                                        onRangeChange = viewModel::setStatsRange,
+                                        onDateChange = viewModel::setStatsDate,
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Notes -> NotesScreen(
+                                        notedRecords = notedRecords,
+                                        imageRecordIds = imageRecordIds,
+                                        date = notesDate,
+                                        onDateChange = viewModel::setNotesDate,
+                                        onOpen = openNote,
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                    AppTab.Settings -> SettingsMainScreen(
+                                        onOpenSubpage = { activeSettingsPageName = it.name },
+                                        onRestartOnboarding = {
+                                            onboardingHandledThisSession = false
+                                            onboardingStepIndex = 0
+                                        },
+                                        onRegisterOnboardingTarget = { key, rect -> onboardingTargets[key] = rect }
+                                    )
+                                }
+                            }
+                        }
+
                     }
                 }
             }
         }
+    }
+
+    // Layer 2: Full-screen Z-Index Overlay for Settings Subpages (Placed OUTSIDE Scaffold, ON TOP OF AppBottomBar)
+    AnimatedVisibility(
+        visible = isSettingsSubpage,
+        enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(220)),
+        exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(220)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    clip = true
+                }
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+        ) {
+            if (activeSettingsPage != SettingsPage.Main) {
+                SettingsSubpage(
+                    title = when (activeSettingsPage) {
+                        SettingsPage.Appearance -> "主题设置"
+                        SettingsPage.Behavior -> "行为"
+                        SettingsPage.HomeDisplay -> "首页显示"
+                        SettingsPage.Statistics -> "统计"
+                        SettingsPage.Semester -> "学期设置"
+                        SettingsPage.Data -> "导入 / 导出"
+                        SettingsPage.Main -> "设置"
+                    },
+                    onBack = { activeSettingsPageName = SettingsPage.Main.name }
+                ) {
+                    when (activeSettingsPage) {
+                        SettingsPage.Appearance -> AppearanceSettings(settings, viewModel) { showWallpaperEditor = true }
+                        SettingsPage.Behavior -> BehaviorSettings(settings = settings, viewModel = viewModel)
+                        SettingsPage.HomeDisplay -> HomeDisplaySettings(settings = settings, viewModel = viewModel)
+                        SettingsPage.Statistics -> StatisticsSettings(settings = settings, viewModel = viewModel)
+                        SettingsPage.Semester -> SemesterSettings(settings, viewModel) { showSemesterStartDialog = true }
+                        SettingsPage.Data -> DataSettings(
+                            onExport = { exportLauncher.launch("big_brother_mobile.zip") },
+                            onImportReplace = { importReplaceLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) },
+                            onImportMerge = { importMergeLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) }
+                        )
+                        SettingsPage.Main -> Unit
+                    }
+                }
+            }
         }
-val onboardingStep = onboardingSteps.getOrNull(onboardingStepIndex)
-        if (onboardingStep != null && onboardingTargetReady && onboardingTarget != null) {
-            OnboardingOverlay(
-                step = onboardingStep,
-                stepIndex = onboardingStepIndex,
-                stepCount = onboardingSteps.size,
-                target = onboardingTarget,
-                onSkip = {
+    }
+
+    if (onboardingStep != null && onboardingTargetReady && onboardingTarget != null) {
+        OnboardingOverlay(
+            step = onboardingStep,
+            stepIndex = onboardingStepIndex,
+            stepCount = onboardingSteps.size,
+            target = onboardingTarget,
+            onSkip = {
+                onboardingHandledThisSession = true
+                onboardingStepIndex = -1
+                viewModel.completeOnboarding()
+            },
+            onPrevious = {
+                onboardingStepIndex = (onboardingStepIndex - 1).coerceAtLeast(0)
+            },
+            onNext = {
+                if (onboardingStepIndex >= onboardingSteps.lastIndex) {
                     onboardingHandledThisSession = true
                     onboardingStepIndex = -1
                     viewModel.completeOnboarding()
-                },
-                onPrevious = {
-                    onboardingStepIndex = (onboardingStepIndex - 1).coerceAtLeast(0)
-                },
-                onNext = {
-                    if (onboardingStepIndex >= onboardingSteps.lastIndex) {
-                        onboardingHandledThisSession = true
-                        onboardingStepIndex = -1
-                        viewModel.completeOnboarding()
-                    } else {
-                        onboardingStepIndex += 1
-                    }
+                } else {
+                    onboardingStepIndex += 1
                 }
-            )
-        }
+            }
+        )
     }
 
     if (showAddGroup) {
@@ -763,9 +1041,14 @@ private fun HomeScreen(
     val favorites = remember(events) { events.filter { it.isFavorite && !it.isDeleted } }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = LocalMainBottomBarPadding.current
+        )
     ) {
         if (settings.showClockSection) {
             item {
@@ -1047,9 +1330,14 @@ private fun TimelineScreen(
     var compactView by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = LocalMainBottomBarPadding.current
+        )
     ) {
         item {
             SectionCard(
@@ -1225,9 +1513,14 @@ private fun StatsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = LocalMainBottomBarPadding.current
+        )
     ) {
         item {
             Card(
@@ -1641,144 +1934,46 @@ private fun formatPercentage(part: Duration, total: Duration): String {
     val percentage = part.toMillis().toDouble() * 100.0 / totalMillis.toDouble()
     return java.lang.String.format(java.util.Locale.getDefault(), "%.1f%%", percentage)
 }
-private enum class SettingsPage {
-    Main,
-    Appearance,
-    Behavior,
-    HomeDisplay,
-    Statistics,
-    Semester,
-    Data
-}
-
-private data class SettingsMenuEntry(
-    val page: SettingsPage,
-    val title: String,
-    val summary: String
-)
-
-private val settingsMenuEntries = listOf(
-    SettingsMenuEntry(SettingsPage.Appearance, "外观", "主题、字体、壁纸、透明度和玻璃效果"),
-    SettingsMenuEntry(SettingsPage.Behavior, "行为", "震动反馈和收藏自动填充"),
-    SettingsMenuEntry(SettingsPage.HomeDisplay, "首页显示", "首页区块、时钟和事件按钮布局"),
-    SettingsMenuEntry(SettingsPage.Statistics, "统计", "统计口径"),
-    SettingsMenuEntry(SettingsPage.Semester, "学期设置", "学期起始日期和周数"),
-    SettingsMenuEntry(SettingsPage.Data, "导入 / 导出", "备份、恢复和数据迁移")
-)
 
 @Composable
-private fun SettingsScreen(
-    viewModel: MainViewModel,
-    settings: AppSettings,
+private fun SettingsMainScreen(
+    onOpenSubpage: (SettingsPage) -> Unit,
     onRestartOnboarding: () -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
-        if (uri != null) viewModel.exportCsv(uri)
-    }
-    val importReplaceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) viewModel.importCsv(uri, false)
-    }
-    val importMergeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) viewModel.importCsv(uri, true)
-    }
-    val context = LocalContext.current
-    val wallpaperLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            viewModel.setWallpaperUri(uri.toString())
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)
+        ) {
+            Text(
+                "设置",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
-    }
-    var pageName by rememberSaveable { mutableStateOf(SettingsPage.Main.name) }
-    var showSemesterStartDialog by rememberSaveable { mutableStateOf(false) }
-    var showWallpaperEditor by rememberSaveable { mutableStateOf(false) }
-    val page = SettingsPage.values().firstOrNull { it.name == pageName } ?: SettingsPage.Main
-    if (page != SettingsPage.Main) {
-        BackHandler { pageName = SettingsPage.Main.name }
-    }
-
-    if (showWallpaperEditor) {
-        WallpaperEditorDialog(
-            settings = settings,
-            viewModel = viewModel,
-            onPickWallpaper = { wallpaperLauncher.launch(arrayOf("image/*")) },
-            onDismiss = { showWallpaperEditor = false }
-        )
-    }
-    if (showSemesterStartDialog) {
-        DateWheelDialog(
-            title = "学期第一天",
-            initialDate = settings.semesterStartDate,
-            onDismiss = { showSemesterStartDialog = false },
-            onConfirm = {
-                viewModel.setSemesterStartDate(it)
-                showSemesterStartDialog = false
-            }
-        )
-    }
-
-    if (page == SettingsPage.Main) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
+            modifier = Modifier.fillMaxSize().overScrollVertical(),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = LocalMainBottomBarPadding.current)
         ) {
             item {
-                Text("设置", style = MaterialTheme.typography.headlineSmall)
+                SettingsMenuGroup(
+                    entries = settingsMenuEntries.take(1),
+                    highlightedPage = SettingsPage.Appearance,
+                    onHighlightedPositioned = { onRegisterOnboardingTarget(OnboardingTarget.SettingsMenu, it) },
+                    onClick = { onOpenSubpage(it.page) }
+                )
             }
-            settingsMenuEntries.forEach { entry ->
-                item {
-                    SettingsMenuRow(
-                        modifier = if (entry.page == SettingsPage.Appearance) Modifier.onGloballyPositioned { coordinates ->
-                            onRegisterOnboardingTarget(OnboardingTarget.SettingsMenu, coordinates.boundsInRoot())
-                        } else Modifier,
-                        title = entry.title,
-                        summary = entry.summary,
-                        onClick = { pageName = entry.page.name }
-                    )
-                }
-            }
+            item { SettingsMenuGroup(entries = settingsMenuEntries.slice(1..2), onClick = { onOpenSubpage(it.page) }) }
+            item { SettingsMenuGroup(entries = settingsMenuEntries.slice(3..4), onClick = { onOpenSubpage(it.page) }) }
             item {
-                SettingsMenuRow(
-                    title = "新手引导",
-                    summary = "重新查看首页、时间轴、备注、统计和设置的功能说明",
-                    onClick = onRestartOnboarding
+                SettingsMenuGroup(
+                    entries = listOf(settingsMenuEntries.last()),
+                    footerEntry = SettingsMenuEntry(SettingsPage.Main, "新手引导", "重新查看主要功能说明", Icons.Rounded.Info),
+                    onClick = { entry -> if (entry.page == SettingsPage.Main) onRestartOnboarding() else onOpenSubpage(entry.page) }
                 )
-            }
-        }
-    } else {
-        SettingsSubpage(
-            title = when (page) {
-                SettingsPage.Appearance -> "外观"
-                SettingsPage.Behavior -> "行为"
-                SettingsPage.HomeDisplay -> "首页显示"
-                SettingsPage.Statistics -> "统计"
-                SettingsPage.Semester -> "学期设置"
-                SettingsPage.Data -> "导入 / 导出"
-                SettingsPage.Main -> "设置"
-            },
-            onBack = { pageName = SettingsPage.Main.name }
-        ) {
-            when (page) {
-                SettingsPage.Appearance -> AppearanceSettings(
-                    settings = settings,
-                    viewModel = viewModel,
-                    onAdjustWallpaper = { showWallpaperEditor = true }
-                )
-                SettingsPage.Behavior -> BehaviorSettings(settings = settings, viewModel = viewModel)
-                SettingsPage.HomeDisplay -> HomeDisplaySettings(settings = settings, viewModel = viewModel)
-                SettingsPage.Statistics -> StatisticsSettings(settings = settings, viewModel = viewModel)
-                SettingsPage.Semester -> SemesterSettings(
-                    settings = settings,
-                    viewModel = viewModel,
-                    onChangeStartDate = { showSemesterStartDialog = true }
-                )
-                SettingsPage.Data -> DataSettings(
-                    onExport = { exportLauncher.launch("big_brother_mobile.zip") },
-                    onImportReplace = { importReplaceLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) },
-                    onImportMerge = { importMergeLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) }
-                )
-                SettingsPage.Main -> Unit
             }
         }
     }
@@ -1790,20 +1985,41 @@ private fun SettingsSubpage(
     onBack: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .height(48.dp)
+                .padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center
         ) {
-            TextButton(onClick = onBack) { Text("‹ 返回") }
-            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 4.dp))
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterStart).size(40.dp)
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "返回",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
         }
+        Spacer(modifier = Modifier.height(4.dp))
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().overScrollVertical(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 4.dp,
+                bottom = navBarBottomPadding + 16.dp
+            )
         ) {
             item { content() }
         }
@@ -1811,38 +2027,89 @@ private fun SettingsSubpage(
 }
 
 @Composable
-private fun SettingsMenuRow(
-    modifier: Modifier = Modifier,
-    title: String,
-    summary: String,
-    onClick: () -> Unit
+private fun SettingsMenuGroup(
+    entries: List<SettingsMenuEntry>,
+    footerEntry: SettingsMenuEntry? = null,
+    highlightedPage: SettingsPage? = null,
+    onHighlightedPositioned: ((Rect) -> Unit)? = null,
+    onClick: (SettingsMenuEntry) -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
-            )
-        ),
-        border = if (LocalGlassEffect.current) {
-            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
-        } else null
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+    val allEntries = if (footerEntry == null) entries else entries + footerEntry
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+        alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
+    )
+    val groupContent: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
+        CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column {
+                allEntries.forEachIndexed { index, entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (entry.page == highlightedPage && onHighlightedPositioned != null) {
+                                    Modifier.onGloballyPositioned { coordinates -> onHighlightedPositioned(coordinates.boundsInRoot()) }
+                                } else Modifier
+                            )
+                            .clickable { onClick(entry) }
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = entry.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(18.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                entry.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                entry.summary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (index != allEntries.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 64.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                        )
+                    }
+                }
             }
-            Text("›", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+    if (LocalUiStyle.current == UiStyle.Miuix) {
+        MiuixCard(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 22.dp,
+            colors = MiuixCardDefaults.defaultColors(
+                color = containerColor,
+                contentColor = MaterialTheme.colorScheme.onSurface
+            ),
+            content = groupContent
+        )
+    } else {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = containerColor),
+            border = if (LocalGlassEffect.current) {
+                androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f))
+            } else null,
+            content = groupContent
+        )
     }
 }
 
@@ -1852,56 +2119,125 @@ private fun AppearanceSettings(
     viewModel: MainViewModel,
     onAdjustWallpaper: () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard(title = "主题") {
-            Text("主题模式")
-            ChoiceChipRow(
-                labels = listOf("跟随系统", "浅色", "深色"),
-                selectedIndex = when (settings.themeMode) {
-                    ThemeMode.System -> 0
-                    ThemeMode.Light -> 1
-                    ThemeMode.Dark -> 2
-                },
-                onSelected = {
-                    viewModel.setThemeMode(
-                        when (it) {
-                            1 -> ThemeMode.Light
-                            2 -> ThemeMode.Dark
-                            else -> ThemeMode.System
-                        }
-                    )
-                }
-            )
+    var accentPickerExpanded by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        ThemePreviewCard(settings)
+        KernelSegmentedControl(
+            labels = listOf("跟随系统", "浅色", "深色"),
+            selectedIndex = when (settings.themeMode) {
+                ThemeMode.System -> 0
+                ThemeMode.Light -> 1
+                ThemeMode.Dark -> 2
+            },
+            onSelected = { index ->
+                viewModel.setThemeMode(
+                    when (index) {
+                        1 -> ThemeMode.Light
+                        2 -> ThemeMode.Dark
+                        else -> ThemeMode.System
+                    }
+                )
+            },
+        )
+        SectionCard(title = "界面风格") {
+            Text("选择应用的组件和排版风格", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("字体")
-            ChoiceChipRow(
-                labels = listOf("跟随系统", "小", "中", "大", "特大"),
-                selectedIndex = when (settings.fontScaleMode) {
-                    FontScaleMode.System -> 0
-                    FontScaleMode.Small -> 1
-                    FontScaleMode.Medium -> 2
-                    FontScaleMode.Large -> 3
-                    FontScaleMode.XLarge -> 4
-                },
-                onSelected = {
-                    viewModel.setFontScaleMode(
-                        when (it) {
-                            0 -> FontScaleMode.System
-                            1 -> FontScaleMode.Small
-                            2 -> FontScaleMode.Medium
-                            3 -> FontScaleMode.Large
-                            4 -> FontScaleMode.XLarge
-                            else -> FontScaleMode.Medium
-                        }
+            KernelSegmentedControl(
+                labels = listOf("Material", "MiuiX"),
+                selectedIndex = if (settings.uiStyle == UiStyle.Material) 0 else 1,
+                onSelected = { viewModel.setUiStyle(if (it == 0) UiStyle.Material else UiStyle.Miuix) }
+            )
+        }
+        SectionCard(title = "颜色") {
+            ThemeSwitchPreference(
+                title = "启用 Monet 颜色",
+                summary = "根据系统壁纸生成动态主题颜色",
+                icon = Icons.Rounded.ColorLens,
+                checked = settings.monetEnabled,
+                onCheckedChange = viewModel::setMonetEnabled,
+            )
+            AnimatedVisibility(visible = settings.monetEnabled) {
+                Column {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    AccentColorPreference(
+                        selectedColorArgb = settings.accentColorArgb,
+                        expanded = accentPickerExpanded,
+                        onExpandedChange = { accentPickerExpanded = it },
+                        onSelected = viewModel::setAccentColor,
                     )
                 }
+            }
+        }
+        SectionCard(title = "导航与材质") {
+            ThemeSwitchPreference(
+                title = "悬浮底栏",
+                summary = "关闭后使用贴合屏幕底部的固态导航栏",
+                icon = Icons.Rounded.ViewDay,
+                checked = settings.floatingBottomBarEnabled,
+                onCheckedChange = viewModel::setFloatingBottomBarEnabled
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            ThemeSwitchPreference(
+                title = "液态玻璃",
+                summary = if (settings.floatingBottomBarEnabled) "为悬浮底栏启用实时背景模糊和流体高光" else "请先开启悬浮底栏",
+                icon = Icons.Rounded.WaterDrop,
+                checked = settings.liquidGlassBottomBarEnabled,
+                enabled = settings.floatingBottomBarEnabled,
+                onCheckedChange = viewModel::setLiquidGlassBottomBarEnabled
+            )
+        }
+        SectionCard(title = "字体") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.FontDownload, contentDescription = null, modifier = Modifier.size(26.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("界面字号", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            val fontStops = listOf(
+                FontScaleMode.ExtraSmall,
+                FontScaleMode.Small,
+                FontScaleMode.Compact,
+                FontScaleMode.System,
+                FontScaleMode.Large,
+                FontScaleMode.XLarge,
+                FontScaleMode.ExtraLarge
+            )
+            val selectedFontIndex = fontStops.indexOf(settings.fontScaleMode).coerceAtLeast(3)
+            Text(
+                text = when (settings.fontScaleMode) {
+                    FontScaleMode.ExtraSmall -> "更小"
+                    FontScaleMode.Small -> "小"
+                    FontScaleMode.Compact -> "较小"
+                    FontScaleMode.System -> "跟随系统"
+                    FontScaleMode.Large -> "较大"
+                    FontScaleMode.XLarge -> "大"
+                    FontScaleMode.ExtraLarge -> "更大"
+                },
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge
+            )
+            AdaptiveSlider(
+                value = selectedFontIndex.toFloat(),
+                onValueChange = { value -> viewModel.setFontScaleMode(fontStops[value.roundToInt().coerceIn(fontStops.indices)]) },
+                valueRange = 0f..6f,
+                steps = 5,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("更小", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("跟随系统", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("更大", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         SectionCard(title = "壁纸") {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Wallpaper, contentDescription = null, modifier = Modifier.size(26.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     val wallpaperLabel = when (settings.wallpaperMode) {
-                        WallpaperMode.Default -> "默认黑白纯色"
+                        WallpaperMode.Default -> "Monet 动态背景"
                         WallpaperMode.Image -> "自选图片"
                         WallpaperMode.Solid -> "纯色"
                     }
@@ -1911,19 +2247,25 @@ private fun AppearanceSettings(
                 TextButton(onClick = onAdjustWallpaper) { Text("调整壁纸") }
             }
         }
-        SectionCard(title = "组件效果") {
+        SectionCard(title = "背景与组件效果") {
             val transparency = (1f - settings.componentAlpha).coerceIn(0f, 1f)
             Text("组件透明度：${(transparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(
+            AdaptiveSlider(
                 value = transparency,
                 onValueChange = { viewModel.setComponentAlpha(1f - it) },
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
-            SettingSwitchLine("玻璃效果", settings.glassEffectEnabled) { viewModel.setGlassEffectEnabled(it) }
+            ThemeSwitchPreference(
+                title = "背景玻璃效果",
+                summary = "模糊自定义壁纸并降低主要卡片的不透明度",
+                icon = Icons.Rounded.BlurOn,
+                checked = settings.glassEffectEnabled,
+                onCheckedChange = viewModel::setGlassEffectEnabled
+            )
             val blurPercent = (settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)
             Text("模糊度：${(blurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(
+            AdaptiveSlider(
                 value = blurPercent,
                 onValueChange = { viewModel.setWallpaperBlurRadius(it * 40f) },
                 valueRange = 0f..1f,
@@ -1932,6 +2274,265 @@ private fun AppearanceSettings(
             )
             Text("开启后使用半透明界面和背景模糊效果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun AccentColorPreference(
+    selectedColorArgb: Int?,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelected: (Int?) -> Unit,
+) {
+    val selectedPreset = accentColorPresets.firstOrNull { it.color.toArgb() == selectedColorArgb }
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onExpandedChange(!expanded) }
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Palette, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(16.dp))
+            Text("强调色", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            selectedPreset?.let {
+                Box(modifier = Modifier.size(18.dp).background(it.color, CircleShape))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(selectedPreset?.name ?: "默认", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = if (expanded) "收起强调色" else "展开强调色",
+                modifier = Modifier.graphicsLayer { rotationZ = if (expanded) -90f else 90f },
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    onClick = {
+                        onSelected(null)
+                        onExpandedChange(false)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (selectedColorArgb == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (selectedColorArgb == null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                ) {
+                    Text(
+                        "默认（系统 Monet）",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                accentColorPresets.chunked(4).forEach { rowPresets ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rowPresets.forEach { preset ->
+                            val selected = preset.color.toArgb() == selectedColorArgb
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                    .clickable {
+                                        onSelected(preset.color.toArgb())
+                                        onExpandedChange(false)
+                                    }
+                                    .padding(vertical = 10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .background(preset.color, CircleShape)
+                                        .border(
+                                            2.dp,
+                                            if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.Transparent,
+                                            CircleShape,
+                                        )
+                                )
+                                Text(preset.name, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemePreviewCard(settings: AppSettings) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Card(
+            modifier = Modifier.size(width = 190.dp, height = 164.dp),
+            shape = RoundedCornerShape(30.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(26.dp).clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(34.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(4) { index ->
+                        Box(
+                            modifier = Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(
+                                if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        text = buildString {
+            append(if (settings.uiStyle == UiStyle.Miuix) "MiuiX" else "Material")
+            append(if (settings.monetEnabled) " · Monet" else " · 默认配色")
+        },
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun KernelSegmentedControl(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+            alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            labels.forEachIndexed { index, label ->
+                val selected = index == selectedIndex
+                Surface(
+                    onClick = { onSelected(index) },
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (selected) MaterialTheme.colorScheme.surfaceContainerLowest else Color.Transparent,
+                    contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = if (selected) 1.dp else 0.dp
+                ) {
+                    Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdaptiveSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    steps: Int = 0
+) {
+    if (LocalUiStyle.current == UiStyle.Miuix) {
+        MiuixSlider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            enabled = enabled,
+            valueRange = valueRange,
+            steps = steps,
+            showKeyPoints = steps > 0
+        )
+    } else {
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            enabled = enabled,
+            valueRange = valueRange,
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
+        )
+    }
+}
+
+@Composable
+private fun AdaptiveSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
+) {
+    if (LocalUiStyle.current == UiStyle.Miuix) {
+        MiuixSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    } else {
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
+        )
+    }
+}
+
+@Composable
+private fun ThemeSwitchPreference(
+    title: String,
+    summary: String,
+    icon: ImageVector,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.55f)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 
@@ -2048,7 +2649,7 @@ private fun DataSettings(
 private fun SettingSwitchLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(title, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 @Composable
@@ -2062,8 +2663,7 @@ private fun WallpaperBackground(
     val scale = if (isLandscape) settings.wallpaperLandscapeScale else settings.wallpaperPortraitScale
     val offsetX = if (isLandscape) settings.wallpaperLandscapeOffsetX else settings.wallpaperPortraitOffsetX
     val offsetY = if (isLandscape) settings.wallpaperLandscapeOffsetY else settings.wallpaperPortraitOffsetY
-    val isDark = LocalIsDarkTheme.current
-    val defaultColor = if (isDark) Color.Black else Color.White
+    val defaultColor = MaterialTheme.colorScheme.background
     val solidColor = colorFromArgb(settings.wallpaperSolidColorArgb)
     val backgroundColor = when (settings.wallpaperMode) {
         WallpaperMode.Solid -> solidColor
@@ -2321,9 +2921,15 @@ private fun IconTextButton(
 
 @Composable
 private fun SettingLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f))
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -3725,11 +4331,11 @@ private fun TimelineDayView(
                         .offset(x = labelWidth + 6.dp, y = minuteHeight * nowMinutes.toFloat())
                         .width(contentWidth)
                         .height(2.dp)
-                        .background(Color.Red)
+                        .background(MaterialTheme.colorScheme.error)
                 )
                 Text(
                     text = TimeUtils.formatTime(now, settings.use24Hour),
-                    color = Color.Red,
+                    color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.offset(x = 0.dp, y = minuteHeight * nowMinutes.toFloat() - 8.dp).width(labelWidth),
                     textAlign = TextAlign.End
@@ -3987,6 +4593,7 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
+
 
 
 

@@ -52,11 +52,22 @@ class SettingsStore(private val context: Context) {
                 "dark" -> ThemeMode.Dark
                 else -> ThemeMode.System
             },
+            uiStyle = when (this[stringPreferencesKey(KEY_UI_STYLE)]) {
+                "material" -> UiStyle.Material
+                else -> UiStyle.Miuix
+            },
+            monetEnabled = this[booleanPreferencesKey(KEY_MONET_ENABLED)] ?: true,
+            accentColorArgb = this[intPreferencesKey(KEY_ACCENT_COLOR)],
+            floatingBottomBarEnabled = this[booleanPreferencesKey(KEY_FLOATING_BOTTOM_BAR)] ?: true,
+            liquidGlassBottomBarEnabled = this[booleanPreferencesKey(KEY_LIQUID_GLASS_BOTTOM_BAR)] ?: true,
             fontScaleMode = when (this[stringPreferencesKey(KEY_FONT_MODE)]) {
+                "extra_small" -> FontScaleMode.ExtraSmall
                 "small" -> FontScaleMode.Small
-                "medium" -> FontScaleMode.Medium
+                "compact" -> FontScaleMode.Compact
+                "medium" -> FontScaleMode.System
                 "large" -> FontScaleMode.Large
                 "xlarge" -> FontScaleMode.XLarge
+                "extra_large" -> FontScaleMode.ExtraLarge
                 else -> FontScaleMode.System
             },
             showClockSection = this[booleanPreferencesKey(KEY_SHOW_CLOCK)] ?: true,
@@ -105,12 +116,23 @@ class SettingsStore(private val context: Context) {
             ThemeMode.Dark -> "dark"
             ThemeMode.System -> "system"
         }
+        this[stringPreferencesKey(KEY_UI_STYLE)] = when (settings.uiStyle) {
+            UiStyle.Material -> "material"
+            UiStyle.Miuix -> "miuix"
+        }
+        this[booleanPreferencesKey(KEY_MONET_ENABLED)] = settings.monetEnabled
+        val accentColorKey = intPreferencesKey(KEY_ACCENT_COLOR)
+        settings.accentColorArgb?.let { this[accentColorKey] = it } ?: remove(accentColorKey)
+        this[booleanPreferencesKey(KEY_FLOATING_BOTTOM_BAR)] = settings.floatingBottomBarEnabled
+        this[booleanPreferencesKey(KEY_LIQUID_GLASS_BOTTOM_BAR)] = settings.liquidGlassBottomBarEnabled
         this[stringPreferencesKey(KEY_FONT_MODE)] = when (settings.fontScaleMode) {
+            FontScaleMode.ExtraSmall -> "extra_small"
             FontScaleMode.Small -> "small"
-            FontScaleMode.Medium -> "medium"
+            FontScaleMode.Compact -> "compact"
+            FontScaleMode.System -> "system"
             FontScaleMode.Large -> "large"
             FontScaleMode.XLarge -> "xlarge"
-            FontScaleMode.System -> "system"
+            FontScaleMode.ExtraLarge -> "extra_large"
         }
         this[booleanPreferencesKey(KEY_SHOW_CLOCK)] = settings.showClockSection
         this[booleanPreferencesKey(KEY_SHOW_RUNNING)] = settings.showRunningSection
@@ -155,6 +177,11 @@ class SettingsStore(private val context: Context) {
 
     companion object {
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_UI_STYLE = "ui_style"
+        private const val KEY_MONET_ENABLED = "monet_enabled"
+        private const val KEY_ACCENT_COLOR = "accent_color"
+        private const val KEY_FLOATING_BOTTOM_BAR = "floating_bottom_bar"
+        private const val KEY_LIQUID_GLASS_BOTTOM_BAR = "liquid_glass_bottom_bar"
         private const val KEY_FONT_MODE = "font_mode"
         private const val KEY_SHOW_CLOCK = "show_clock"
         private const val KEY_SHOW_RUNNING = "show_running"

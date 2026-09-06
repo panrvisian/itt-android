@@ -75,17 +75,21 @@ ITT organizes activities by groups and events. It supports normal timing, manual
 
 - A first-launch overlay guide can be skipped
 - The guide can be opened again from Settings
+- The grouped Settings screen uses slide transitions for subpages and includes Material and MiuiX presentation styles
+- Themes can follow the system or stay light/dark; Monet is enabled by default, supports preset accent colors, and falls back to MiuiX defaults when disabled
+- Bottom navigation uses MiuiX components and can switch between solid and fully rounded floating layouts; live blur and liquid glass are enabled by default for the floating layout
+- Main pages switch through the bottom bar; horizontal pager gestures are disabled to avoid conflicts with sliders
 - Edge-to-edge display accounts for the bottom gesture navigation bar
 - System-bar icon colors follow the current theme
 
 ## Tech Stack
 
 - Language: Kotlin
-- UI: Jetpack Compose (Material 3)
+- UI: Jetpack Compose (Material 3, MiuiX-inspired components, Monet dynamic color)
 - Database: Room 2.6.1 (database version 2, with migration)
 - Preferences: DataStore Preferences
 - Architecture: ViewModel + Repository
-- Build: Gradle 8.7 / Android Gradle Plugin 8.5.2 / Kotlin 1.9.24
+- Build: Gradle 9.7.1 / Android Gradle Plugin 9.3.2 / Kotlin 2.4.10 / KSP 2.3.10
 - Min SDK: Android 12 (API 31)
 - Target / Compile SDK: 34
 
@@ -98,9 +102,9 @@ ITT organizes activities by groups and events. It supports normal timing, manual
 ## Requirements
 
 - Windows, Android Studio, or PowerShell
-- JDK 17
-- Android SDK Platform 34
-- Android SDK Build Tools 34.0.0
+- JDK 21
+- Android SDK Platform 37.0
+- Android SDK Build Tools 37.0.0
 - Android SDK Platform-Tools (including `adb`)
 - Internet access to resolve Gradle dependencies
 
@@ -113,7 +117,7 @@ For automatic build, installation, app launch, or wireless ADB, see [AUTO_INSTAL
 Minimal build example (replace the paths with the actual paths on your host):
 
 ```powershell
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
@@ -129,7 +133,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ## Project Structure
 
 ```text
-android-mobile/
+itt-android/
 ├── app/
 │   ├── build.gradle.kts
 │   └── src/main/

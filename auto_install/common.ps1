@@ -109,7 +109,15 @@ function Test-JdkHome {
         return $false
     }
     $javaPath = Join-Path $Candidate 'bin\java.exe'
-    return (Test-Path -LiteralPath $javaPath -PathType Leaf)
+    $releasePath = Join-Path $Candidate 'release'
+    if (-not (Test-Path -LiteralPath $javaPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $releasePath -PathType Leaf)) {
+        return $false
+    }
+    $versionLine = Get-Content -LiteralPath $releasePath -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match '^JAVA_VERSION=' } |
+        Select-Object -First 1
+    return ($versionLine -match '^JAVA_VERSION="21(?:\.|\")')
 }
 
 function Resolve-JdkDir {
@@ -142,8 +150,7 @@ function Resolve-JdkDir {
         }
     }
 
-    # Common Windows installation locations. Only JDK 17 directories are
-    # considered so a newer Java installation is not selected accidentally.
+    # Common Windows installation locations. This project targets JDK 21.
     $roots = @()
     if ($env:ProgramFiles) {
         $roots += (Join-Path $env:ProgramFiles 'Eclipse Adoptium')
@@ -170,7 +177,7 @@ function Resolve-JdkDir {
         $children = Get-ChildItem -LiteralPath $normalizedRoot -Directory -ErrorAction SilentlyContinue |
             Sort-Object Name -Descending
         foreach ($child in $children) {
-            if ($child.Name -match '(?i)(jdk|temurin|zulu|microsoft|corretto).*17' -and (Test-JdkHome $child.FullName)) {
+            if ($child.Name -match '(?i)(jdk|temurin|zulu|microsoft|corretto).*21' -and (Test-JdkHome $child.FullName)) {
                 return (Normalize-ToolPath $child.FullName)
             }
         }
@@ -222,9 +229,9 @@ function Assert-JavaAvailable {
         return $true
     }
 
-    Write-Host 'ERROR: JDK 17 was not found.' -ForegroundColor Red
+    Write-Host 'ERROR: JDK 21 was not found.' -ForegroundColor Red
     Write-Host '  Set JAVA_HOME to the JDK directory containing bin\java.exe.' -ForegroundColor Yellow
-    Write-Host '  Example: $env:JAVA_HOME = ''C:\Path\To\jdk-17''' -ForegroundColor Yellow
+    Write-Host '  Example: $env:JAVA_HOME = ''C:\Path\To\jdk-21''' -ForegroundColor Yellow
     return $false
 }
 

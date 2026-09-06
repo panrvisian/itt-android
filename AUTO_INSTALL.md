@@ -10,19 +10,30 @@
 
 ## 环境要求
 
-1. JDK 17，并确保 JDK 根目录内存在 `bin\java.exe`
-2. Android SDK Platform 34
-3. Android SDK Build Tools 34.0.0
+1. JDK 21，并确保 JDK 根目录内存在 `bin\java.exe`
+2. Android SDK Platform 37.0
+3. Android SDK Build Tools 37.0.0
 4. Android SDK Platform-Tools（包含 `adb.exe`）
 5. 手机开启开发者选项和 USB 调试，或已完成无线调试配对
 6. 首次构建时可以访问网络，以下载 Gradle 依赖
+
+SDK Manager 安装项：
+
+```powershell
+$env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
+& "$env:ANDROID_SDK_ROOT\cmdline-tools\latest\bin\sdkmanager.bat" `
+  --sdk_root="$env:ANDROID_SDK_ROOT" `
+  'platforms;android-37.0' 'build-tools;37.0.0' 'platform-tools'
+```
+
+如果使用 Android Studio，则在 SDK Manager 中安装同名的 Platform 37.0、Build Tools 37.0.0 和 Platform-Tools。
 
 ## 在另一台主机上的配置
 
 推荐先在当前 PowerShell 会话设置环境变量。下面的路径只是格式示例，请替换为本机实际路径：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:ANDROID_HOME = $env:ANDROID_SDK_ROOT
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
@@ -35,7 +46,7 @@ java -version
 adb version
 ```
 
-`java -version` 应使用 JDK 17。`adb version` 能正常输出版本信息即可。
+`java -version` 应使用 JDK 21。`adb version` 能正常输出版本信息即可。
 
 ### 脚本的路径查找顺序
 
@@ -55,7 +66,7 @@ JDK 查找顺序：
 1. 当前会话的 `JAVA_HOME`
 2. 用户或系统环境变量中的 `JAVA_HOME`
 3. `PATH` 中的 `java.exe`
-4. Windows 常见的 JDK 17 安装目录
+4. Windows 常见的 JDK 21 安装目录
 
 如果 SDK 或 JDK 安装在非标准目录，设置环境变量即可，不需要修改脚本。项目中的 `local.properties` 仅属于本机配置文件，不应提交到 Git。
 
@@ -154,12 +165,12 @@ $env:ANDROID_SDK_ROOT = 'C:\Path\To\Android\Sdk'
 $env:Path = "$env:ANDROID_SDK_ROOT\platform-tools;$env:Path"
 ```
 
-### `JDK 17 was not found`
+### `JDK 21 was not found`
 
 确认 `JAVA_HOME` 指向 JDK 根目录，而不是 `bin` 目录：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Path\To\jdk-17'
+$env:JAVA_HOME = 'C:\Path\To\jdk-21'
 ```
 
 ### 没有检测到设备

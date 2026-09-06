@@ -33,6 +33,11 @@ object CsvCodec {
         sb.appendLine("windowbounds,100,100,1280,800")
         sb.appendLine("[ANDROID]")
         sb.appendLine("theme_mode,${csvField(s.themeMode.name.lowercase())}")
+        sb.appendLine("ui_style,${csvField(s.uiStyle.name.lowercase())}")
+        sb.appendLine("monet_enabled,${s.monetEnabled}")
+        sb.appendLine("accent_color,${s.accentColorArgb?.toString().orEmpty()}")
+        sb.appendLine("floating_bottom_bar,${s.floatingBottomBarEnabled}")
+        sb.appendLine("liquid_glass_bottom_bar,${s.liquidGlassBottomBarEnabled}")
         sb.appendLine("font_mode,${csvField(s.fontScaleMode.name.lowercase())}")
         sb.appendLine("show_clock,${s.showClockSection}")
         sb.appendLine("show_running,${s.showRunningSection}")
@@ -179,6 +184,11 @@ object CsvCodec {
         if (parts.size < 2) return settings
         return when (parts[0].lowercase()) {
             "theme_mode" -> settings.copy(themeMode = mapTheme(parts[1]))
+            "ui_style" -> settings.copy(uiStyle = if (parts[1].equals("material", true)) UiStyle.Material else UiStyle.Miuix)
+            "monet_enabled" -> settings.copy(monetEnabled = parseBool(parts[1]) ?: settings.monetEnabled)
+            "accent_color" -> settings.copy(accentColorArgb = parts[1].toIntOrNull())
+            "floating_bottom_bar" -> settings.copy(floatingBottomBarEnabled = parts[1].toBooleanStrictOrNull() ?: true)
+            "liquid_glass_bottom_bar" -> settings.copy(liquidGlassBottomBarEnabled = parts[1].toBooleanStrictOrNull() ?: true)
             "font_mode" -> settings.copy(fontScaleMode = mapFont(parts[1]))
             "show_clock" -> settings.copy(showClockSection = parseBool(parts[1]) ?: settings.showClockSection)
             "show_running" -> settings.copy(showRunningSection = parseBool(parts[1]) ?: settings.showRunningSection)
@@ -204,10 +214,13 @@ object CsvCodec {
     }
 
     private fun mapFont(value: String): FontScaleMode = when (value.lowercase()) {
+        "extra_small" -> FontScaleMode.ExtraSmall
         "small" -> FontScaleMode.Small
-        "medium" -> FontScaleMode.Medium
+        "compact" -> FontScaleMode.Compact
+        "medium" -> FontScaleMode.System
         "large" -> FontScaleMode.Large
         "xlarge" -> FontScaleMode.XLarge
+        "extra_large" -> FontScaleMode.ExtraLarge
         else -> FontScaleMode.System
     }
 
@@ -224,14 +237,14 @@ object CsvCodec {
     }
 
     private fun mapFontForWindows(mode: FontScaleMode): String = when (mode) {
-        FontScaleMode.Small -> "small"
-        FontScaleMode.Medium, FontScaleMode.System -> "medium"
-        FontScaleMode.Large, FontScaleMode.XLarge -> "large"
+        FontScaleMode.ExtraSmall, FontScaleMode.Small, FontScaleMode.Compact -> "small"
+        FontScaleMode.System -> "medium"
+        FontScaleMode.Large, FontScaleMode.XLarge, FontScaleMode.ExtraLarge -> "large"
     }
 
     private fun mapFontFromWindows(value: String): FontScaleMode = when (value.lowercase()) {
         "small" -> FontScaleMode.Small
-        "medium" -> FontScaleMode.Medium
+        "medium" -> FontScaleMode.System
         "large" -> FontScaleMode.Large
         "xlarge" -> FontScaleMode.XLarge
         else -> FontScaleMode.System
