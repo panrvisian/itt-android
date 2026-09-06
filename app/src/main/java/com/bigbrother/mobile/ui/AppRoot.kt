@@ -18,6 +18,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -54,7 +55,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -141,6 +141,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -404,17 +405,24 @@ fun AppRoot(viewModel: MainViewModel) {
     val eventsByGroup = remember(sortedEvents) { sortedEvents.groupBy { it.groupId } }
     val eventMap = remember(visibleEvents) { visibleEvents.associateBy { it.id } }
     val groupMap = remember(visibleGroups) { visibleGroups.associateBy { it.id } }
-    val runningRecords = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
-    val finishedRecords = remember(records) { records.filter { it.endTime != null }.sortedByDescending { it.startTime } }
-    val imageRecordIds = remember(noteImages) { noteImages.map { it.recordId }.toSet() }
+    // Notes are not part of the first screen. Keep their full-history projections lazy so Room's
+    // initial emissions do not make the first home scroll compete with unrelated list processing.
+    val imageRecordIds = remember(noteImages) {
+        lazy(LazyThreadSafetyMode.NONE) { noteImages.mapTo(mutableSetOf()) { it.recordId } }
+    }
     val notedRecordIds = remember(records, imageRecordIds) {
-        (records.filter { it.noteText.isNotBlank() }.map { it.id } + imageRecordIds).toSet()
+        lazy(LazyThreadSafetyMode.NONE) {
+            records.filterTo(mutableListOf()) { it.noteText.isNotBlank() }.mapTo(imageRecordIds.value.toMutableSet()) { it.id }
+        }
     }
     val notedRecords = remember(records, imageRecordIds) {
-        records.filter { it.noteText.isNotBlank() || it.id in imageRecordIds }.sortedByDescending { it.startTime }
+        lazy(LazyThreadSafetyMode.NONE) {
+            records.filter { it.noteText.isNotBlank() || it.id in imageRecordIds.value }
+                .sortedByDescending { it.startTime }
+        }
     }
     val openNote: (RecordEntity) -> Unit = { record ->
-        if (record.noteText.isNotBlank() || record.id in notedRecordIds) noteViewRecord = record else noteEditRecord = record
+        if (record.noteText.isNotBlank() || record.id in imageRecordIds.value) noteViewRecord = record else noteEditRecord = record
     }
 
     val tabs = remember { appBottomBarDestinations.map { it.tab } }
@@ -435,7 +443,7 @@ fun AppRoot(viewModel: MainViewModel) {
     LaunchedEffect(selectedTab) {
         val page = tabs.indexOf(selectedTab)
         if (page >= 0 && pagerState.currentPage != page) {
-            pagerState.animateScrollToPage(page)
+            pagerState.animateScrollToPage(page, animationSpec = tween(200, easing = FastOutSlowInEasing))
         }
     }
 
@@ -557,7 +565,7 @@ fun AppRoot(viewModel: MainViewModel) {
                             tabs.getOrNull(index)?.let { tab ->
                                 viewModel.selectTab(tab)
                                 scope.launch {
-                                    pagerState.animateScrollToPage(index)
+                                    pagerState.animateScrollToPage(index, animationSpec = tween(200, easing = FastOutSlowInEasing))
                                 }
                             }
                         }
@@ -578,7 +586,7 @@ fun AppRoot(viewModel: MainViewModel) {
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
-                            beyondViewportPageCount = 0,
+                            beyondViewportPageCount = 1,
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
                             modifier = Modifier
@@ -593,10 +601,7 @@ fun AppRoot(viewModel: MainViewModel) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .graphicsLayer {
-                                        compositingStrategy = CompositingStrategy.Offscreen
-                                        clip = true
-                                    }
+                                    .clipToBounds()
                             ) {
                                 when (tab) {
                                     AppTab.Home -> HomeScreen(
@@ -622,7 +627,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                         viewModel = viewModel,
                                         settings = settings,
                                         records = records,
-                                        notedRecordIds = notedRecordIds,
+                                        notedRecordIds = notedRecordIds.value,
                                         onRecordClick = { selectedRecord = it },
                                         onAddManualRecord = { manualRecordDate = it },
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
@@ -638,8 +643,8 @@ fun AppRoot(viewModel: MainViewModel) {
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Notes -> NotesScreen(
-                                        notedRecords = notedRecords,
-                                        imageRecordIds = imageRecordIds,
+                                        notedRecords = notedRecords.value,
+                                        imageRecordIds = imageRecordIds.value,
                                         date = notesDate,
                                         onDateChange = viewModel::setNotesDate,
                                         onOpen = openNote,
@@ -1269,13 +1274,11 @@ private fun HomeDashboardWidgets(
     val haptics = LocalHapticFeedback.current
 
     Row(
-        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        modifier = modifier.fillMaxWidth().height(168.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
-            modifier = Modifier
-                .weight(1.15f)
-                .fillMaxHeight()
+            modifier = Modifier.weight(1.15f).fillMaxHeight()
         ) {
             val cardColor = if (activeRecord != null) {
                 colorFromArgb(activeRecord.groupColorArgbSnapshot)
@@ -1292,8 +1295,7 @@ private fun HomeDashboardWidgets(
             MiuixCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
-                    .heightIn(min = 168.dp),
+                    .fillMaxHeight(),
                 cornerRadius = 22.dp,
                 colors = MiuixCardDefaults.defaultColors(
                     color = cardColor,
@@ -1657,17 +1659,19 @@ private fun EventGrid(
         rows.forEach { row ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 row.forEach { cell ->
                     val event = cell.event
                     val group = groupMap[event.groupId]
-                    Box(modifier = Modifier.weight(cell.span.toFloat()).fillMaxHeight()) {
+                    Box(modifier = Modifier.weight(cell.span.toFloat())) {
                         LongPressEventTile(
                             title = event.name,
                             subtitle = if (showGroupSubtitle) group?.name ?: "未分组" else null,
                             color = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt()),
-                            modifier = Modifier.fillMaxWidth().fillMaxHeight().heightIn(min = if (showGroupSubtitle) 64.dp else 52.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = if (showGroupSubtitle) 64.dp else 52.dp),
                             vibrationEnabled = settings.vibrationEnabled,
                             onClick = { onEventClick(event) },
                             onLongPress = { onEventLongPress(event.id) }
@@ -3117,13 +3121,32 @@ private fun WallpaperBackground(
 @Composable
 private fun rememberWallpaperBitmap(uriString: String?): ImageBitmap? {
     val context = LocalContext.current
-    val imageBitmap by produceState<ImageBitmap?>(null, uriString) {
+    val displayMetrics = context.resources.displayMetrics
+    val targetWidth = displayMetrics.widthPixels.coerceAtLeast(1)
+    val targetHeight = displayMetrics.heightPixels.coerceAtLeast(1)
+    val imageBitmap by produceState<ImageBitmap?>(null, uriString, targetWidth, targetHeight) {
         value = null
         if (!uriString.isNullOrBlank()) {
             value = withContext(Dispatchers.IO) {
                 runCatching {
-                    context.contentResolver.openInputStream(Uri.parse(uriString))?.use { input ->
-                        BitmapFactory.decodeStream(input)?.asImageBitmap()
+                    val uri = Uri.parse(uriString)
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(input, null, bounds)
+                    }
+                    var sampleSize = 1
+                    while (
+                        bounds.outWidth / (sampleSize * 2) >= targetWidth &&
+                        bounds.outHeight / (sampleSize * 2) >= targetHeight
+                    ) {
+                        sampleSize *= 2
+                    }
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(
+                            input,
+                            null,
+                            BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                        )?.asImageBitmap()
                     }
                 }.getOrNull()
             }
@@ -5003,11 +5026,6 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
-
-
-
-
-
 
 
 

@@ -91,6 +91,9 @@ interface RecordDao {
     @Query("SELECT * FROM records")
     suspend fun getAllOnce(): List<RecordEntity>
 
+    @Query("SELECT * FROM records WHERE endTime IS NULL ORDER BY startTime")
+    suspend fun getRunningOnce(): List<RecordEntity>
+
     @Query("SELECT * FROM records WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): RecordEntity?
 
