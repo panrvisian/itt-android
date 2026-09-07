@@ -79,6 +79,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - `ui/NoteScreens.kt`：备注列表、查看和编辑界面
 - `ui/AppComponents.kt`：通用卡片、长按事件块和选择控件
 - `ui/Theme.kt`：主题、字号和全局圆角；`ui/MainActivity.kt`：应用入口
+- `COMPONENT_LOADING_ORDER.md`：Splash、五个主页面、Pager、后台计算和底栏的加载顺序与性能约束；修改相关代码前必须阅读
 - `widget/`：1×1 和 4×2 桌面小组件
 - `AndroidManifest.xml` 与 `res/xml/file_paths.xml`：拍照备注使用的 FileProvider
 - `auto_install/common.ps1`、`auto_install/deploy.ps1`、`auto_install/menu.ps1`、`auto_install/wifi-adb.ps1`：跨主机工具解析和自动部署
@@ -142,6 +143,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 紧凑视图仍按实际时间判断重叠，并沿用横向分列和宽度规则。
 - 紧凑视图不显示小时刻度、横线、当前时间线，也不启用缩放。
 - 当前时间线只在比例视图且所选日期为今天时显示。
+- 启动预加载和页面滑动期间只组合时间轴控件与空表格；页面完全停稳后才在 `Dispatchers.Default` 构建当日记录布局。只有当前时间轴存在进行中记录时才启动每秒时钟更新。
 
 ### 4. 时间轴手势
 
@@ -176,6 +178,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 退出编辑器但未正式保存时自动保存当前文字和草稿图片；即使内容为空也可能留下空草稿。
 - 打开编辑器时优先恢复已有草稿；没有草稿时把已保存的备注文字和图片复制为新的编辑草稿。
 - 进行中记录的草稿持续保留；已结束记录结束超过一天后清理；记录已不存在时也清理。
+- 备注页启动预加载时只组合日期控件和列表外壳；页面完全停稳后才在 `Dispatchers.Default` 构建文字/图片备注索引并筛选当天列表，数据未变化时保留页面缓存。
 
 ### 7. 统计
 
@@ -195,6 +198,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 事件排行按累计时长降序、记录段次数降序、事件名称升序排列。
 - 重叠记录分别计入各自事件和分组，因此饼图分母采用累计时长。
 - 跨天续段继续参与时长统计，确保范围内实际时长不丢失；只有首页频率排除了续段。
+- 统计页预加载时只组合日期范围控件、汇总卡片和图表外壳；页面完全停稳后才在后台计算当前选中的一种范围。默认只计算“天”，周、月、学期仅在用户选择对应标签时计算；数据和范围未变化时复用当前页面缓存。
 
 ### 8. 外观与导航
 
@@ -207,7 +211,9 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
   - **主题与视觉层次**：MiuiX（浅色 `#F2F2F7`/`#FFFFFF`、深色 `#121212`/`#1C1C1E`）与 Material Design 3 原生配色重构；全局注入 `LocalContentColor` 解决深色模式字体退回默认黑色的问题。
   - **二级设置界面视差覆盖**：全屏 Z-index 平滑覆盖，主界面同步 -25% 视差平移且内容保持 100% 静态零重构。
   - **120Hz 纯正 Pager 物理跟手与边界阻尼**：主 Tab 翻页 100% 依托 `HorizontalPager` 的 `PagerState` 物理动画引擎，`currentPageOffsetFraction` 毫秒级 1:1 动态跟手（0 抽搐 0 闪跳）；最外侧边界页（首页/设置）接入 MiuiX 官方 `(1 - ratio^0.75) * 0.5` 阻尼曲线与弹簧回弹。
-  - **启动全页面预加载与底栏同帧响应**：启动首帧预驻留 5 主页至 GPU 内存（`beyondViewportPageCount = 4`），消除切页与滑动耗时；底栏实时监听 `targetPage`，与页面滑动同帧触发液态玻璃高光胶囊。
+  - **内容驱动的分阶段启动**：不再使用固定 900ms 等待或 Compose 二次开屏层。系统 Splash 使用 `drawable-nodpi/splash_icon.png` 产品标志并等待首页真实数据首发；随后按帧依次预组合时间轴表格外壳、备注外壳、统计外壳和完整设置主页，全部完成后自动退出。页面的记录投影与统计计算不参与开屏。
+  - **停稳后按需计算**：时间轴、备注和统计只在对应 Pager 页面成为 `settledPage` 后启动后台计算，滑动和跨页动画期间保持轻量外壳；设置二级页只在用户点击对应入口后组合。底栏点击只发起一次 Pager 动画，避免重复导航协程争抢帧时间。
+  - **底栏同帧响应**：底栏实时监听 `targetPage`，与页面滑动同帧触发液态玻璃高光胶囊；重力传感器方向按 3° 量化并只使绘制失效，避免传感器噪声重组整个导航栏。
   - **自定义壁纸与悬浮液态玻璃融合**：升级 `layerBackdrop` 采样的父容器同时包裹 `WallpaperBackground` 与 Tab 页面，实现自定义图片壁纸下悬浮底栏 AGSL 屈光折射与模糊效果的 100% 呈现。
   - **底层 I/O 线程隔离**：Room 数据库事务与文件 I/O 全量隔离至 `Dispatchers.IO` 工作线程。
 - Monet 默认开启；未指定强调色时使用系统动态色，指定预设强调色后以该颜色生成主题。关闭 Monet 时隐藏强调色选择并恢复 MiuiX 默认明暗配色。Monet 与强调色设置由 DataStore 持久化并进入 CSV 备份。

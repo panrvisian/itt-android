@@ -91,15 +91,24 @@ import java.time.LocalDate
 fun NotesScreen(
     notedRecords: List<RecordEntity>,
     imageRecordIds: Set<String>,
+    contentActive: Boolean,
+    contentLoaded: Boolean,
     date: LocalDate,
     onDateChange: (LocalDate) -> Unit,
     onOpen: (RecordEntity) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    val dayRecords = remember(notedRecords, date) {
-        notedRecords.filter { TimeUtils.toLocalDate(it.startTime) == date }
+    val calculationKey = remember(notedRecords, date) { Any() }
+    var calculation by remember { mutableStateOf<Pair<Any, List<RecordEntity>>?>(null) }
+    LaunchedEffect(contentLoaded, calculationKey) {
+        if (!contentLoaded) return@LaunchedEffect
+        val recordsForDay = withContext(Dispatchers.Default) {
+            notedRecords.filter { TimeUtils.toLocalDate(it.startTime) == date }
+        }
+        calculation = calculationKey to recordsForDay
     }
+    val dayRecords = calculation?.takeIf { it.first === calculationKey }?.second
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     LazyColumn(
@@ -138,7 +147,13 @@ fun NotesScreen(
                 }
             }
         }
-        if (dayRecords.isEmpty()) {
+        if (!contentActive) {
+            item { Text("打开备注页后加载记录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (!contentLoaded) {
+            item { Text("正在构建备注索引…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (dayRecords == null) {
+            item { Text("正在加载备注…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (dayRecords.isEmpty()) {
             item { Text("这一天没有备注", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             items(dayRecords, key = { it.id }) { record ->

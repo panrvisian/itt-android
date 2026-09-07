@@ -137,6 +137,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
@@ -195,6 +196,7 @@ import com.bigbrother.mobile.data.EventEntity
 import com.bigbrother.mobile.data.EventGridColumns
 import com.bigbrother.mobile.data.FontScaleMode
 import com.bigbrother.mobile.data.GroupEntity
+import com.bigbrother.mobile.data.NoteImageEntity
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
@@ -203,6 +205,7 @@ import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.GroupStat
 import com.bigbrother.mobile.domain.StatsCalculator
 import com.bigbrother.mobile.domain.StatsRangeKind
+import com.bigbrother.mobile.domain.StatsResult
 import com.bigbrother.mobile.domain.TimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -304,6 +307,14 @@ private val settingsMenuEntries = listOf(
 
 private data class AccentColorPreset(val name: String, val color: Color)
 
+private data class NoteProjection(
+    val sourceRecords: List<RecordEntity>,
+    val sourceImages: List<NoteImageEntity>,
+    val imageRecordIds: Set<String>,
+    val notedRecordIds: Set<String>,
+    val notedRecords: List<RecordEntity>
+)
+
 private val accentColorPresets = listOf(
     AccentColorPreset("蓝色", Color(0xFF4F6BED)),
     AccentColorPreset("靛蓝", Color(0xFF5966D9)),
@@ -316,7 +327,10 @@ private val accentColorPresets = listOf(
 )
 
 @Composable
-fun AppRoot(viewModel: MainViewModel) {
+fun AppRoot(
+    viewModel: MainViewModel,
+    onStartupContentReady: () -> Unit
+) {
     val groups by viewModel.groups.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle()
     val records by viewModel.records.collectAsStateWithLifecycle()
@@ -328,6 +342,7 @@ fun AppRoot(viewModel: MainViewModel) {
     val statsDate by viewModel.statsDate.collectAsStateWithLifecycle()
     val timelineDate by viewModel.timelineDate.collectAsStateWithLifecycle()
     val notesDate by viewModel.notesDate.collectAsStateWithLifecycle()
+    val homeContentReady by viewModel.homeContentReady.collectAsStateWithLifecycle()
 
     var showAddGroup by rememberSaveable { mutableStateOf(false) }
     var showAddEvent by rememberSaveable { mutableStateOf(false) }
@@ -405,29 +420,64 @@ fun AppRoot(viewModel: MainViewModel) {
     val eventsByGroup = remember(sortedEvents) { sortedEvents.groupBy { it.groupId } }
     val eventMap = remember(visibleEvents) { visibleEvents.associateBy { it.id } }
     val groupMap = remember(visibleGroups) { visibleGroups.associateBy { it.id } }
-    // Notes are not part of the first screen. Keep their full-history projections lazy so Room's
-    // initial emissions do not make the first home scroll compete with unrelated list processing.
-    val imageRecordIds = remember(noteImages) {
-        lazy(LazyThreadSafetyMode.NONE) { noteImages.mapTo(mutableSetOf()) { it.recordId } }
-    }
-    val notedRecordIds = remember(records, imageRecordIds) {
-        lazy(LazyThreadSafetyMode.NONE) {
-            records.filterTo(mutableListOf()) { it.noteText.isNotBlank() }.mapTo(imageRecordIds.value.toMutableSet()) { it.id }
-        }
-    }
-    val notedRecords = remember(records, imageRecordIds) {
-        lazy(LazyThreadSafetyMode.NONE) {
-            records.filter { it.noteText.isNotBlank() || it.id in imageRecordIds.value }
-                .sortedByDescending { it.startTime }
-        }
-    }
     val openNote: (RecordEntity) -> Unit = { record ->
-        if (record.noteText.isNotBlank() || record.id in imageRecordIds.value) noteViewRecord = record else noteEditRecord = record
+        if (record.noteText.isNotBlank() || noteImages.any { it.recordId == record.id }) {
+            noteViewRecord = record
+        } else {
+            noteEditRecord = record
+        }
     }
 
     val tabs = remember { appBottomBarDestinations.map { it.tab } }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0), pageCount = { tabs.size })
-    val scope = rememberCoroutineScope()
+    val pagerNavigationScope = rememberCoroutineScope()
+    val startupReadyCallback by rememberUpdatedState(onStartupContentReady)
+    var preloadedPageRadius by remember { mutableIntStateOf(0) }
+    var startupPreloadComplete by remember { mutableStateOf(false) }
+
+    LaunchedEffect(homeContentReady) {
+        if (!homeContentReady || startupPreloadComplete) return@LaunchedEffect
+
+        // Give the complete home page its own frame, then precompose one lightweight page shell
+        // per frame. The splash leaves only after the final (settings) page has been laid out.
+        withFrameNanos { }
+        for (radius in 1..tabs.lastIndex) {
+            preloadedPageRadius = radius
+            withFrameNanos { }
+        }
+        withFrameNanos { }
+        startupPreloadComplete = true
+        startupReadyCallback()
+    }
+
+    val settledTab = tabs.getOrNull(pagerState.settledPage)
+    val noteProjectionNeeded = startupPreloadComplete &&
+        (settledTab == AppTab.Timeline || settledTab == AppTab.Notes)
+    var noteProjection by remember { mutableStateOf<NoteProjection?>(null) }
+    val validNoteProjection = noteProjection?.takeIf {
+        it.sourceRecords === records && it.sourceImages === noteImages
+    }
+
+    LaunchedEffect(noteProjectionNeeded, records, noteImages) {
+        if (!noteProjectionNeeded) return@LaunchedEffect
+        noteProjection = withContext(Dispatchers.Default) {
+            val imageIds = noteImages.mapTo(mutableSetOf()) { it.recordId }
+            val recordIds = records
+                .asSequence()
+                .filter { it.noteText.isNotBlank() }
+                .mapTo(imageIds.toMutableSet()) { it.id }
+            NoteProjection(
+                sourceRecords = records,
+                sourceImages = noteImages,
+                imageRecordIds = imageIds,
+                notedRecordIds = recordIds,
+                notedRecords = records
+                    .filter { it.noteText.isNotBlank() || it.id in imageIds }
+                    .sortedByDescending { it.startTime }
+            )
+        }
+    }
+
     val useFloatingBottomBar = settings.floatingBottomBarEnabled
     val useLiquidGlassBottomBar = useFloatingBottomBar && settings.liquidGlassBottomBarEnabled
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -438,13 +488,6 @@ fun AppRoot(viewModel: MainViewModel) {
         }
     } else {
         null
-    }
-
-    LaunchedEffect(selectedTab) {
-        val page = tabs.indexOf(selectedTab)
-        if (page >= 0 && pagerState.currentPage != page) {
-            pagerState.animateScrollToPage(page, animationSpec = tween(200, easing = FastOutSlowInEasing))
-        }
     }
 
     LaunchedEffect(pagerState) {
@@ -564,8 +607,11 @@ fun AppRoot(viewModel: MainViewModel) {
                         onSelected = { index ->
                             tabs.getOrNull(index)?.let { tab ->
                                 viewModel.selectTab(tab)
-                                scope.launch {
-                                    pagerState.animateScrollToPage(index, animationSpec = tween(200, easing = FastOutSlowInEasing))
+                                pagerNavigationScope.launch {
+                                    pagerState.animateScrollToPage(
+                                        index,
+                                        animationSpec = tween(200, easing = FastOutSlowInEasing)
+                                    )
                                 }
                             }
                         }
@@ -586,7 +632,7 @@ fun AppRoot(viewModel: MainViewModel) {
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
-                            beyondViewportPageCount = (tabs.size - 1).coerceAtLeast(0),
+                            beyondViewportPageCount = preloadedPageRadius,
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
                             modifier = Modifier
@@ -598,6 +644,7 @@ fun AppRoot(viewModel: MainViewModel) {
                                 }
                         ) { page ->
                             val tab = tabs[page]
+                            val contentActive = startupPreloadComplete && pagerState.settledPage == page
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -627,7 +674,8 @@ fun AppRoot(viewModel: MainViewModel) {
                                         viewModel = viewModel,
                                         settings = settings,
                                         records = records,
-                                        notedRecordIds = notedRecordIds.value,
+                                        notedRecordIds = validNoteProjection?.notedRecordIds.orEmpty(),
+                                        contentActive = contentActive,
                                         onRecordClick = { selectedRecord = it },
                                         onAddManualRecord = { manualRecordDate = it },
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
@@ -638,13 +686,16 @@ fun AppRoot(viewModel: MainViewModel) {
                                         records = records,
                                         range = statsRange,
                                         date = statsDate,
+                                        contentActive = contentActive,
                                         onRangeChange = viewModel::setStatsRange,
                                         onDateChange = viewModel::setStatsDate,
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Notes -> NotesScreen(
-                                        notedRecords = notedRecords.value,
-                                        imageRecordIds = imageRecordIds.value,
+                                        notedRecords = validNoteProjection?.notedRecords.orEmpty(),
+                                        imageRecordIds = validNoteProjection?.imageRecordIds.orEmpty(),
+                                        contentActive = contentActive,
+                                        contentLoaded = contentActive && validNoteProjection != null,
                                         date = notesDate,
                                         onDateChange = viewModel::setNotesDate,
                                         onOpen = openNote,
@@ -1727,6 +1778,7 @@ private fun TimelineScreen(
     settings: AppSettings,
     records: List<RecordEntity>,
     notedRecordIds: Set<String>,
+    contentActive: Boolean,
     onRecordClick: (RecordEntity) -> Unit,
     onAddManualRecord: (LocalDate) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
@@ -1794,6 +1846,7 @@ private fun TimelineScreen(
                 listState = listState,
                 notedRecordIds = notedRecordIds,
                 compactView = compactView,
+                contentActive = contentActive,
                 onRecordClick = onRecordClick
             )
         }
@@ -1819,23 +1872,35 @@ private fun TimelineContent(
     listState: LazyListState,
     notedRecordIds: Set<String>,
     compactView: Boolean,
+    contentActive: Boolean,
     onRecordClick: (RecordEntity) -> Unit
 ) {
-    val now = produceClock()
     val dayStart = remember(day) { TimeUtils.startOfDay(day) }
     val dayEnd = remember(day) { TimeUtils.startOfDay(day.plusDays(1)) }
-    val showNowLine = day == LocalDate.now()
-    val dayRecords = remember(records, dayStart, dayEnd, now, notedRecordIds) {
-        buildTimelineItems(records, dayStart, dayEnd, now, notedRecordIds)
+    val hasRunningRecords = contentActive && records.any { it.endTime == null }
+    val now = produceClock(enabled = hasRunningRecords)
+    val showNowLine = contentActive && day == LocalDate.now()
+    val calculationKey = remember(records, dayStart, dayEnd, notedRecordIds) { Any() }
+    var calculation by remember { mutableStateOf<Pair<Any, List<TimelineRecordUi>>?>(null) }
+
+    LaunchedEffect(contentActive, calculationKey, now) {
+        if (!contentActive) return@LaunchedEffect
+        val items = withContext(Dispatchers.Default) {
+            buildTimelineItems(records, dayStart, dayEnd, now, notedRecordIds)
+        }
+        calculation = calculationKey to items
     }
+    val dayRecords = calculation?.takeIf { it.first === calculationKey }?.second
     var timelineVerticalScale by rememberSaveable(day.toString()) { mutableFloatStateOf(1f) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (dayRecords.isEmpty()) {
+        if (contentActive && dayRecords == null) {
+            Text("正在加载记录…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (dayRecords?.isEmpty() == true) {
             Text("这一天没有记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (compactView) {
-            if (dayRecords.isNotEmpty()) {
+            if (!dayRecords.isNullOrEmpty()) {
                 CompactTimelineView(
                     items = dayRecords,
                     settings = settings,
@@ -1844,7 +1909,7 @@ private fun TimelineContent(
             }
         } else {
             TimelineDayView(
-                items = dayRecords,
+                items = dayRecords.orEmpty(),
                 dayStart = dayStart,
                 settings = settings,
                 now = now,
@@ -1864,6 +1929,7 @@ private fun StatsScreen(
     records: List<RecordEntity>,
     range: StatsRangeKind,
     date: LocalDate,
+    contentActive: Boolean,
     onRangeChange: (StatsRangeKind) -> Unit,
     onDateChange: (LocalDate) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
@@ -1874,9 +1940,17 @@ private fun StatsScreen(
     val bounds = remember(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks) {
         StatsCalculator.rangeFor(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks)
     }
-    val result = remember(records, events, bounds) {
-        StatsCalculator.compute(records, events, bounds.first, bounds.second)
+    val calculationKey = remember(records, events, bounds) { Any() }
+    var calculation by remember { mutableStateOf<Pair<Any, StatsResult>?>(null) }
+
+    LaunchedEffect(contentActive, calculationKey) {
+        if (!contentActive) return@LaunchedEffect
+        val result = withContext(Dispatchers.Default) {
+            StatsCalculator.compute(records, events, bounds.first, bounds.second)
+        }
+        calculation = calculationKey to result
     }
+    val result = calculation?.takeIf { it.first === calculationKey }?.second
     val ranges = listOf(StatsRangeKind.Today, StatsRangeKind.Week, StatsRangeKind.Month, StatsRangeKind.Semester)
     val labels = listOf("天", "周", "月", "学期")
     val periodStartDate = remember(bounds) { TimeUtils.toLocalDate(bounds.first) }
@@ -1907,11 +1981,12 @@ private fun StatsScreen(
     }
     val canNavigateDate = range != StatsRangeKind.Semester
     val selectedGroupId = selectedGroupIdState.value
-    val selectedGroup = remember(result.groups, selectedGroupId) { findGroupById(result.groups, selectedGroupId) }
-    val displayedEventItems = selectedGroup?.items ?: result.items
+    val resultGroups = result?.groups.orEmpty()
+    val selectedGroup = remember(resultGroups, selectedGroupId) { findGroupById(resultGroups, selectedGroupId) }
+    val displayedEventItems = selectedGroup?.items ?: result?.items.orEmpty()
 
-    LaunchedEffect(result.groups, selectedGroupId, selectedEventId) {
-        val currentGroup = findGroupById(result.groups, selectedGroupId)
+    LaunchedEffect(resultGroups, selectedGroupId, selectedEventId) {
+        val currentGroup = findGroupById(resultGroups, selectedGroupId)
         if (selectedGroupId.isNotEmpty() && currentGroup == null) {
             selectedGroupIdState.value = ""
             selectedEventId = null
@@ -2019,14 +2094,14 @@ private fun StatsScreen(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                SummaryCard(modifier = Modifier.weight(1f), title = "去重时长", value = formatDurationToMinute(result.uniqueTotal))
-                SummaryCard(modifier = Modifier.weight(1f), title = "累计时长", value = formatDurationToMinute(result.sumTotal))
+                SummaryCard(modifier = Modifier.weight(1f), title = "去重时长", value = result?.let { formatDurationToMinute(it.uniqueTotal) } ?: "—")
+                SummaryCard(modifier = Modifier.weight(1f), title = "累计时长", value = result?.let { formatDurationToMinute(it.sumTotal) } ?: "—")
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                SummaryCard(modifier = Modifier.weight(1f), title = "活跃天数", value = "${result.activeDays}")
-                SummaryCard(modifier = Modifier.weight(1f), title = "事件数", value = "${result.items.size}")
+                SummaryCard(modifier = Modifier.weight(1f), title = "活跃天数", value = result?.activeDays?.toString() ?: "—")
+                SummaryCard(modifier = Modifier.weight(1f), title = "事件数", value = result?.items?.size?.toString() ?: "—")
             }
         }
         item {
@@ -2049,6 +2124,12 @@ private fun StatsScreen(
                 }
             ) {
                 when {
+                    result == null -> {
+                        Text(
+                            if (contentActive) "正在计算当前统计范围…" else "打开统计页后计算",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     result.groups.isEmpty() -> {
                         Text("没有可统计的记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -2074,7 +2155,12 @@ private fun StatsScreen(
         }
         item {
             SectionCard(title = selectedGroup?.let { "事件排行 · ${it.groupName}" } ?: "事件排行") {
-                if (displayedEventItems.isEmpty()) {
+                if (result == null) {
+                    Text(
+                        if (contentActive) "正在生成事件排行…" else "打开统计页后加载",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (displayedEventItems.isEmpty()) {
                     Text("没有可统计的记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     val maxMillis = max(1L, displayedEventItems.maxOf { it.total.toMillis() })
@@ -4978,12 +5064,15 @@ internal fun SimpleDialog(
     }
 }
 @Composable
-private fun produceClock(): Long {
+private fun produceClock(enabled: Boolean = true): Long {
     val state = remember { androidx.compose.runtime.mutableLongStateOf(TimeUtils.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            state.longValue = TimeUtils.now()
-            delay(1000)
+    LaunchedEffect(enabled) {
+        state.longValue = TimeUtils.now()
+        if (enabled) {
+            while (true) {
+                delay(1000)
+                state.longValue = TimeUtils.now()
+            }
         }
     }
     return state.longValue
@@ -5026,10 +5115,6 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
-
-
-
-
 
 
 
