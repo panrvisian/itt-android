@@ -106,7 +106,8 @@ class SettingsStore(private val context: Context) {
             wallpaperLandscapeOffsetY = this[floatPreferencesKey(KEY_WALLPAPER_LANDSCAPE_OFFSET_Y)] ?: 0f,
             componentAlpha = (this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] ?: 0.88f).coerceIn(0f, 1f),
             glassEffectEnabled = this[booleanPreferencesKey(KEY_GLASS_EFFECT)] ?: false,
-            wallpaperBlurRadius = (this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] ?: 22f).coerceIn(0f, 40f)
+            wallpaperBlurRadius = (this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] ?: 22f).coerceIn(0f, 40f),
+            homeHintDismissed = this[booleanPreferencesKey(KEY_HOME_HINT_DISMISSED)] ?: false
         )
     }
 
@@ -173,6 +174,7 @@ class SettingsStore(private val context: Context) {
         this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] = settings.componentAlpha.coerceIn(0f, 1f)
         this[booleanPreferencesKey(KEY_GLASS_EFFECT)] = settings.glassEffectEnabled
         this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] = settings.wallpaperBlurRadius.coerceIn(0f, 40f)
+        this[booleanPreferencesKey(KEY_HOME_HINT_DISMISSED)] = settings.homeHintDismissed
     }
 
     companion object {
@@ -210,6 +212,7 @@ class SettingsStore(private val context: Context) {
         private const val KEY_COMPONENT_ALPHA = "component_alpha"
         private const val KEY_GLASS_EFFECT = "glass_effect"
         private const val KEY_WALLPAPER_BLUR_RADIUS = "wallpaper_blur_radius"
+        private const val KEY_HOME_HINT_DISMISSED = "home_hint_dismissed"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
     }
 }

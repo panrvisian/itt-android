@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -90,11 +91,11 @@ import top.yukonga.miuix.kmp.utils.Platform
 import top.yukonga.miuix.kmp.utils.platform
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 private val LocalIosTabScale = staticCompositionLocalOf { { 1f } }
 
@@ -123,40 +124,47 @@ private const val LIGHT_REF_X = 0.5f
 private const val LIGHT_REF_Y = 0.7f
 private const val GRAVITY_DIR_THRESHOLD_SQ = 0.01f // |g_xy| > 0.1, ≈ 6° tilt
 
-/** Tracks gravity for a `dualPeak` highlight's primary light, with an extra UV-clockwise offset on top. */
+/** Quantizes the gravity direction so sensor noise invalidates drawing far less often. */
+@Composable
+private fun rememberQuantizedGravityAngle(): State<Float> {
+    val tilt = rememberDeviceTilt()
+    return remember(tilt) {
+        derivedStateOf {
+            val gx = tilt.value.gravityX
+            val gy = tilt.value.gravityY
+            val degrees = if (gx * gx + gy * gy > GRAVITY_DIR_THRESHOLD_SQ) {
+                (atan2(gy, gx) * 180.0 / PI).toFloat()
+            } else {
+                -90f
+            }
+            (degrees / 3f).roundToInt() * 3f
+        }
+    }
+}
+
+/** Builds the highlight as draw-observed state instead of recomposing the whole navigation bar. */
 @Composable
 private fun rememberGravityRotatedHighlight(
     base: Highlight,
+    gravityAngle: State<Float>,
     extraDegrees: Float = 0f,
-): Highlight {
+): State<Highlight> {
     val baseStyle = base.style as BloomStroke
-    val tilt by rememberDeviceTilt()
-    val rotatedPrimary = remember(tilt, baseStyle.primaryLight, extraDegrees) {
-        val basePrimary = baseStyle.primaryLight
-        val gx = tilt.gravityX
-        val gy = tilt.gravityY
-        val gMagSq = gx * gx + gy * gy
-        val (lx0, ly0) = if (gMagSq > GRAVITY_DIR_THRESHOLD_SQ) {
-            val invMag = 1f / sqrt(gMagSq)
-            (gx * invMag) to (gy * invMag)
-        } else {
-            0f to -1f
+    return remember(base, gravityAngle, extraDegrees) {
+        derivedStateOf {
+            val basePrimary = baseStyle.primaryLight
+            val radians = (gravityAngle.value + extraDegrees) * PI / 180.0
+            val lightX = cos(radians).toFloat()
+            val lightY = sin(radians).toFloat()
+            val rotatedPrimary = basePrimary.copy(
+                position = LightPosition(
+                    x = LIGHT_REF_X + lightX,
+                    y = LIGHT_REF_Y + lightY,
+                    z = basePrimary.position.z,
+                ),
+            )
+            base.copy(style = baseStyle.copy(primaryLight = rotatedPrimary))
         }
-        val rad = extraDegrees * PI / 180.0
-        val c = cos(rad).toFloat()
-        val s = sin(rad).toFloat()
-        val lx = c * lx0 - s * ly0
-        val ly = s * lx0 + c * ly0
-        basePrimary.copy(
-            position = LightPosition(
-                x = LIGHT_REF_X + lx,
-                y = LIGHT_REF_Y + ly,
-                z = basePrimary.position.z,
-            ),
-        )
-    }
-    return remember(base, rotatedPrimary) {
-        base.copy(style = baseStyle.copy(primaryLight = rotatedPrimary))
     }
 }
 
@@ -266,8 +274,9 @@ internal fun MiuixLiquidGlassNavigationBar(
         )
     }
 
-    val baseHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, extraDegrees = -45f)
-    val pillHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, extraDegrees = 90f)
+    val gravityAngle = rememberQuantizedGravityAngle()
+    val baseHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, gravityAngle, extraDegrees = -45f)
+    val pillHighlight = rememberGravityRotatedHighlight(iosIndicatorSpecular, gravityAngle, extraDegrees = 90f)
 
     val combinedBackdrop = backdrop?.let { rememberCombinedBackdrop(it, tabsBackdrop) }
 
@@ -365,7 +374,7 @@ internal fun MiuixLiquidGlassNavigationBar(
                                             refractionAmount = 24.dp.toPx(),
                                         )
                                     },
-                                    highlight = { baseHighlight.copy(alpha = 0.75f) },
+                                    highlight = { baseHighlight.value.copy(alpha = 0.75f) },
                                     layerBlock = {
                                         val width = size.width.coerceAtLeast(1f)
                                         val s = lerp(1f, 1f + 16.dp.toPx() / width, dampedDrag.pressProgress)
@@ -445,7 +454,7 @@ internal fun MiuixLiquidGlassNavigationBar(
                                         chromaticAberration = 0.5f,
                                     )
                                 },
-                                highlight = { pillHighlight.copy(alpha = dampedDrag.pressProgress) },
+                                highlight = { pillHighlight.value.copy(alpha = dampedDrag.pressProgress) },
                                 layerBlock = {
                                     scaleX = dampedDrag.scaleX
                                     scaleY = dampedDrag.scaleY

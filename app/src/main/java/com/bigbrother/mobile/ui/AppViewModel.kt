@@ -24,7 +24,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -39,11 +42,30 @@ enum class AppTab {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: AppRepository = (application as BigBrotherApp).container.repository
 
-    val groups = repository.groups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val events = repository.events.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val records = repository.records.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val settings = repository.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
+    private enum class HomeDataSource { Groups, Events, Records, Settings }
+
+    private val pendingHomeDataSources = MutableStateFlow(HomeDataSource.entries.toSet())
+    val homeContentReady = pendingHomeDataSources
+        .map { it.isEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private fun markHomeDataSourceReady(source: HomeDataSource) {
+        pendingHomeDataSources.update { pending -> pending - source }
+    }
+
+    val groups = repository.groups
+        .onEach { markHomeDataSourceReady(HomeDataSource.Groups) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val events = repository.events
+        .onEach { markHomeDataSourceReady(HomeDataSource.Events) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val records = repository.records
+        .onEach { markHomeDataSourceReady(HomeDataSource.Records) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val settings = repository.settings
+        .onEach { markHomeDataSourceReady(HomeDataSource.Settings) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
     val onboardingCompleted = repository.onboardingCompleted
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -148,6 +170,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.endRecord(recordId) }
     }
 
+    fun endAllRunningRecords() {
+        viewModelScope.launch { repository.endAllRunningRecords() }
+    }
+
     fun deleteRunningRecord(recordId: String) {
         viewModelScope.launch { repository.deleteRunningRecord(recordId) }
     }
@@ -222,6 +248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setUse24Hour(use24Hour: Boolean) {
         viewModelScope.launch { repository.setSettings { it.copy(use24Hour = use24Hour) } }
+    }
+
+    fun dismissHomeHint() {
+        viewModelScope.launch { repository.setSettings { it.copy(homeHintDismissed = true) } }
     }
 
     fun setTotalDurationMode(mode: TotalDurationMode) {
@@ -326,6 +356,4 @@ class MainViewModelFactory(
         return MainViewModel(application) as T
     }
 }
-
-
 

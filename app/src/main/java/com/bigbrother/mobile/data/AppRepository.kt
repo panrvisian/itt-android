@@ -41,9 +41,16 @@ class AppRepository(
 
     suspend fun initialize() {
         ensureSystemGroup()
-        normalizeOvernight()
+        normalizeRunningOvernight()
         cleanupNoteDrafts()
-        requestWidgetRefresh()
+    }
+
+    /**
+     * Completed records are normalized when they are written. At startup only running records can
+     * have crossed a new midnight, so avoid reading and sorting the entire history on the hot path.
+     */
+    private suspend fun normalizeRunningOvernight(now: Long = System.currentTimeMillis()) = database.withTransaction {
+        normalizeOvernightInTransaction(now, recordsDao.getRunningOnce())
     }
 
     suspend fun ensureSystemGroup() = database.withTransaction {
@@ -216,6 +223,19 @@ class AppRepository(
         true
     }.also { requestWidgetRefresh() }
 
+    suspend fun endAllRunningRecords(): Int = database.withTransaction {
+        val running = recordsDao.getRunningOnce()
+        if (running.isEmpty()) return@withTransaction 0
+
+        val commonEndTime = System.currentTimeMillis()
+        recordsDao.endAllRunning(commonEndTime)
+        normalizeOvernightInTransaction(
+            now = commonEndTime,
+            sourceRecords = running.map { it.copy(endTime = commonEndTime) }
+        )
+        running.size
+    }.also { requestWidgetRefresh() }
+
     suspend fun deleteRunningRecord(recordId: String): Boolean = database.withTransaction {
         val record = recordsDao.getById(recordId) ?: return@withTransaction false
         if (record.endTime != null) return@withTransaction false
@@ -255,8 +275,11 @@ class AppRepository(
         normalizeOvernightInTransaction(now)
     }.also { requestWidgetRefresh() }
 
-    private suspend fun normalizeOvernightInTransaction(now: Long = System.currentTimeMillis()) {
-        val all = recordsDao.getAllOnce().sortedBy { it.startTime }
+    private suspend fun normalizeOvernightInTransaction(
+        now: Long = System.currentTimeMillis(),
+        sourceRecords: List<RecordEntity>? = null
+    ) {
+        val all = sourceRecords ?: recordsDao.getAllOnce().sortedBy { it.startTime }
         for (record in all) {
             val actualEnd = record.endTime ?: now
             if (actualEnd <= record.startTime) continue
@@ -596,7 +619,5 @@ class AppRepository(
 
     suspend fun currentSettings(): AppSettings = settings.first()
 }
-
-
 
 

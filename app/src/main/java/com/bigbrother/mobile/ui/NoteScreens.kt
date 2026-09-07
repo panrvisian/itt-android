@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -88,22 +91,32 @@ import java.time.LocalDate
 fun NotesScreen(
     notedRecords: List<RecordEntity>,
     imageRecordIds: Set<String>,
+    contentActive: Boolean,
+    contentLoaded: Boolean,
     date: LocalDate,
     onDateChange: (LocalDate) -> Unit,
     onOpen: (RecordEntity) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    val dayRecords = remember(notedRecords, date) {
-        notedRecords.filter { TimeUtils.toLocalDate(it.startTime) == date }
+    val calculationKey = remember(notedRecords, date) { Any() }
+    var calculation by remember { mutableStateOf<Pair<Any, List<RecordEntity>>?>(null) }
+    LaunchedEffect(contentLoaded, calculationKey) {
+        if (!contentLoaded) return@LaunchedEffect
+        val recordsForDay = withContext(Dispatchers.Default) {
+            notedRecords.filter { TimeUtils.toLocalDate(it.startTime) == date }
+        }
+        calculation = calculationKey to recordsForDay
     }
+    val dayRecords = calculation?.takeIf { it.first === calculationKey }?.second
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     LazyColumn(
         modifier = Modifier.fillMaxSize().overScrollVertical(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = 16.dp,
-            top = 16.dp,
+            top = statusBarTop + 12.dp,
             end = 16.dp,
             bottom = LocalMainBottomBarPadding.current
         )
@@ -134,7 +147,13 @@ fun NotesScreen(
                 }
             }
         }
-        if (dayRecords.isEmpty()) {
+        if (!contentActive) {
+            item { Text("打开备注页后加载记录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (!contentLoaded) {
+            item { Text("正在构建备注索引…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (dayRecords == null) {
+            item { Text("正在加载备注…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (dayRecords.isEmpty()) {
             item { Text("这一天没有备注", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             items(dayRecords, key = { it.id }) { record ->

@@ -45,7 +45,8 @@ data class AppSettings(
     val wallpaperLandscapeOffsetY: Float = 0f,
     val componentAlpha: Float = 0.88f,
     val glassEffectEnabled: Boolean = false,
-    val wallpaperBlurRadius: Float = 22f
+    val wallpaperBlurRadius: Float = 22f,
+    val homeHintDismissed: Boolean = false
 )
 
 @Entity(tableName = "groups")

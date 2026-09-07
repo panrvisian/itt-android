@@ -91,6 +91,9 @@ interface RecordDao {
     @Query("SELECT * FROM records")
     suspend fun getAllOnce(): List<RecordEntity>
 
+    @Query("SELECT * FROM records WHERE endTime IS NULL ORDER BY startTime")
+    suspend fun getRunningOnce(): List<RecordEntity>
+
     @Query("SELECT * FROM records WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): RecordEntity?
 
@@ -108,6 +111,9 @@ interface RecordDao {
 
     @Query("UPDATE records SET endTime = :endTime WHERE id = :id")
     suspend fun end(id: String, endTime: Long)
+
+    @Query("UPDATE records SET endTime = :endTime WHERE endTime IS NULL")
+    suspend fun endAllRunning(endTime: Long): Int
 
     @Query("UPDATE records SET noteText = :noteText WHERE id = :id")
     suspend fun updateNoteText(id: String, noteText: String)
