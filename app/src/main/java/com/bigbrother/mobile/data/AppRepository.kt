@@ -223,6 +223,19 @@ class AppRepository(
         true
     }.also { requestWidgetRefresh() }
 
+    suspend fun endAllRunningRecords(): Int = database.withTransaction {
+        val running = recordsDao.getRunningOnce()
+        if (running.isEmpty()) return@withTransaction 0
+
+        val commonEndTime = System.currentTimeMillis()
+        recordsDao.endAllRunning(commonEndTime)
+        normalizeOvernightInTransaction(
+            now = commonEndTime,
+            sourceRecords = running.map { it.copy(endTime = commonEndTime) }
+        )
+        running.size
+    }.also { requestWidgetRefresh() }
+
     suspend fun deleteRunningRecord(recordId: String): Boolean = database.withTransaction {
         val record = recordsDao.getById(recordId) ?: return@withTransaction false
         if (record.endTime != null) return@withTransaction false
@@ -606,6 +619,5 @@ class AppRepository(
 
     suspend fun currentSettings(): AppSettings = settings.first()
 }
-
 
 

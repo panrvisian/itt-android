@@ -236,7 +236,10 @@ fun BigBrotherTheme(
         LocalIsDarkTheme provides dark,
         LocalUiStyle provides settings.uiStyle
     ) {
-        MiuixTheme(controller = miuixController) {
+        // Reuse the already resolved colors. Passing the controller here makes MiuixTheme call
+        // currentColors() a second time, which repeats the expensive Monet/HCT palette setup
+        // during the first composition.
+        MiuixTheme(colors = miuixColors) {
             MaterialTheme(
                 colorScheme = colorScheme,
                 typography = typography,

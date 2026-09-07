@@ -26,6 +26,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculateCentroidSize
@@ -438,8 +439,9 @@ fun AppRoot(
     LaunchedEffect(homeContentReady) {
         if (!homeContentReady || startupPreloadComplete) return@LaunchedEffect
 
-        // Give the complete home page its own frame, then precompose one lightweight page shell
-        // per frame. The splash leaves only after the final (settings) page has been laid out.
+        // Give the complete home page its own frame, then precompose one inactive page shell per
+        // frame. Keeping these shells resident prevents first composition and layout from running
+        // during a swipe or bottom-bar animation. Business content remains gated by settledPage.
         withFrameNanos { }
         for (radius in 1..tabs.lastIndex) {
             preloadedPageRadius = radius
@@ -632,6 +634,8 @@ fun AppRoot(
                         HorizontalPager(
                             state = pagerState,
                             pageSpacing = 0.dp,
+                            // Shells are precomposed one per frame before Splash exits. Expensive
+                            // page content is still deferred until settledPage selects that page.
                             beyondViewportPageCount = preloadedPageRadius,
                             overscrollEffect = null,
                             userScrollEnabled = !isSettingsSubpage,
@@ -659,6 +663,7 @@ fun AppRoot(
                                         eventsByGroup = eventsByGroup,
                                         eventRecordCounts = eventRecordCounts,
                                         records = records,
+                                        contentActive = contentActive,
                                         onEventClick = { selectedEvent = it },
                                         onRecordClick = { selectedRecord = it },
                                         onRecordEnd = { viewModel.endRecord(it.id) },
@@ -1097,6 +1102,7 @@ private fun HomeScreen(
     eventsByGroup: Map<String, List<EventEntity>>,
     eventRecordCounts: Map<String, Int>,
     records: List<RecordEntity>,
+    contentActive: Boolean,
     onEventClick: (EventEntity) -> Unit,
     onRecordClick: (RecordEntity) -> Unit,
     onRecordEnd: (RecordEntity) -> Unit,
@@ -1106,6 +1112,7 @@ private fun HomeScreen(
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
+    val clockState = rememberClockState(enabled = contentActive)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -1165,12 +1172,28 @@ private fun HomeScreen(
                 HomeDashboardWidgets(
                     running = running,
                     settings = settings,
-                    onRecordClick = onRecordClick,
-                    onRecordEnd = onRecordEnd,
+                    clockState = clockState,
+                    onEndAll = viewModel::endAllRunningRecords,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
                         onRegisterOnboardingTarget(OnboardingTarget.HomeEvents, coordinates.boundsInRoot())
                     }
                 )
+            }
+
+            if (running.isNotEmpty()) {
+                items(
+                    items = running,
+                    key = { "running_${it.id}" },
+                    contentType = { "running_record" }
+                ) { record ->
+                    RunningRecordStatusCard(
+                        record = record,
+                        clockState = clockState,
+                        vibrationEnabled = settings.vibrationEnabled,
+                        onClick = { onRecordClick(record) },
+                        onLongPress = { onRecordEnd(record) }
+                    )
+                }
             }
 
             if (!settings.homeHintDismissed) {
@@ -1316,193 +1339,271 @@ private fun HomeTopBar(
 private fun HomeDashboardWidgets(
     running: List<RecordEntity>,
     settings: AppSettings,
-    onRecordClick: (RecordEntity) -> Unit,
-    onRecordEnd: (RecordEntity) -> Unit,
+    clockState: State<Long>,
+    onEndAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val now = produceClock()
-    val activeRecord = running.firstOrNull()
+    val isWorking = running.isNotEmpty()
     val haptics = LocalHapticFeedback.current
+    val statusCardColor = if (isWorking) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val statusContentColor = if (isWorking) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val statusIndicatorColor = if (isWorking) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    }
 
-    Row(
-        modifier = modifier.fillMaxWidth().height(168.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier.weight(1.15f).fillMaxHeight()
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val dashboardGap = 12.dp
+        val statusCardSize = (maxWidth - dashboardGap) / 2
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(statusCardSize),
+            horizontalArrangement = Arrangement.spacedBy(dashboardGap)
         ) {
-            val cardColor = if (activeRecord != null) {
-                colorFromArgb(activeRecord.groupColorArgbSnapshot)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            }
-
-            val cardContentColor = if (activeRecord != null) {
-                if (cardColor.luminance() > 0.5f) Color.Black else Color.White
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            }
-
             MiuixCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(),
+                modifier = Modifier.size(statusCardSize),
                 cornerRadius = 22.dp,
                 colors = MiuixCardDefaults.defaultColors(
-                    color = cardColor,
-                    contentColor = cardContentColor
+                    color = statusCardColor,
+                    contentColor = statusContentColor
                 )
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(22.dp))
-                        .pointerInput(activeRecord) {
-                            detectTapGestures(
-                                onLongPress = {
-                                    if (activeRecord != null) {
+                        .then(
+                            if (isWorking) {
+                                Modifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = {
                                         if (settings.vibrationEnabled) {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         }
-                                        onRecordEnd(activeRecord)
+                                        onEndAll()
                                     }
-                                }
-                            )
-                        }
-                        .padding(16.dp)
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
                 ) {
                     Canvas(
                         modifier = Modifier
-                            .size(110.dp)
+                            .size(132.dp)
                             .align(Alignment.BottomEnd)
                             .graphicsLayer {
-                                translationX = 22.dp.toPx()
-                                translationY = 22.dp.toPx()
+                                translationX = 28.dp.toPx()
+                                translationY = 24.dp.toPx()
                             }
                     ) {
-                        val strokeWidth = 8.dp.toPx()
-                        val arcColor = cardContentColor.copy(alpha = 0.22f)
-
+                        val ringStroke = 12.dp.toPx()
                         drawCircle(
-                            color = arcColor,
-                            radius = size.width / 2f - strokeWidth / 2f,
-                            style = Stroke(width = strokeWidth)
+                            color = statusIndicatorColor,
+                            radius = size.minDimension / 2f - ringStroke / 2f,
+                            style = Stroke(width = ringStroke)
                         )
-
-                        if (activeRecord != null) {
+                        if (isWorking) {
                             val checkPath = Path().apply {
-                                moveTo(size.width * 0.32f, size.height * 0.50f)
-                                lineTo(size.width * 0.46f, size.height * 0.64f)
-                                lineTo(size.width * 0.68f, size.height * 0.38f)
+                                moveTo(size.width * 0.28f, size.height * 0.51f)
+                                lineTo(size.width * 0.46f, size.height * 0.68f)
+                                lineTo(size.width * 0.76f, size.height * 0.34f)
                             }
                             drawPath(
                                 path = checkPath,
-                                color = arcColor,
-                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                color = statusIndicatorColor,
+                                style = Stroke(
+                                    width = 13.dp.toPx(),
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
                             )
                         }
                     }
 
+                    Text(
+                        text = "当前",
+                        modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = statusContentColor.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = if (isWorking) "工作中" else "空闲",
+                        modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = statusContentColor,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .width(statusCardSize)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(dashboardGap)
+            ) {
+                MiuixCard(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    cornerRadius = 22.dp,
+                    colors = MiuixCardDefaults.defaultColors(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
                     Column(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(14.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = if (activeRecord != null) "进行中" else "未开始",
+                            text = "当前时间",
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = cardContentColor.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        Text(
-                            text = activeRecord?.eventNameSnapshot ?: "空闲",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = cardContentColor,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = if (activeRecord != null) {
-                                activeRecord.groupNameSnapshot
-                            } else {
-                                "长按事件以开始"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Normal,
-                            color = cardContentColor.copy(alpha = 0.85f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        HomeCurrentTimeValue(
+                            clockState = clockState,
+                            use24Hour = settings.use24Hour
                         )
                     }
                 }
-            }
-        }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            MiuixCard(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                cornerRadius = 22.dp,
-                colors = MiuixCardDefaults.defaultColors(
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                MiuixCard(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    cornerRadius = 22.dp,
+                    colors = MiuixCardDefaults.defaultColors(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
-                    Text(
-                        text = "当前时间",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = TimeUtils.formatClock(now, false, settings.use24Hour),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            MiuixCard(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                cornerRadius = 22.dp,
-                colors = MiuixCardDefaults.defaultColors(
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "已进行",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = if (activeRecord != null) {
-                            formatRunning(activeRecord.startTime, now)
-                        } else {
-                            "00:00"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(14.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "事件数",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = running.size.toString(),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun HomeCurrentTimeValue(
+    clockState: State<Long>,
+    use24Hour: Boolean
+) {
+    Text(
+        text = TimeUtils.formatClock(clockState.value, false, use24Hour),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+}
+
+@Composable
+private fun RunningRecordStatusCard(
+    record: RecordEntity,
+    clockState: State<Long>,
+    vibrationEnabled: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    val eventColor = colorFromArgb(record.groupColorArgbSnapshot)
+
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().height(72.dp),
+        cornerRadius = 18.dp,
+        colors = MiuixCardDefaults.defaultColors(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(18.dp))
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        if (vibrationEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        onLongPress()
+                    }
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(42.dp)
+                    .background(eventColor, RoundedCornerShape(99.dp))
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = record.groupNameSnapshot,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = record.eventNameSnapshot,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            RunningElapsedTimeValue(
+                startTime = record.startTime,
+                clockState = clockState
+            )
+        }
+    }
+}
+
+@Composable
+private fun RunningElapsedTimeValue(
+    startTime: Long,
+    clockState: State<Long>
+) {
+    Text(
+        text = formatRunningClock(startTime, clockState.value),
+        modifier = Modifier.widthIn(min = 72.dp),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.End,
+        maxLines = 1
+    )
 }
 
 @Composable
@@ -1524,7 +1625,7 @@ private fun HomeHintBanner(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "长按0.5s开始，进行中长按暂停",
+                text = "长按事件开始；长按进行中卡片结束，长按“工作中”结束全部",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
@@ -3053,7 +3154,6 @@ private fun HomeDisplaySettings(settings: AppSettings, viewModel: MainViewModel)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionCard(title = "首页显示") {
             SettingLine("显示时钟", settings.showClockSection) { viewModel.setShowClockSection(it) }
-            SettingLine("显示进行中", settings.showRunningSection) { viewModel.setShowRunningSection(it) }
             SettingLine("显示收藏", settings.showFavoriteSection) { viewModel.setShowFavoriteSection(it) }
             SettingLine("显示分组", settings.showGroupedSection) { viewModel.setShowGroupedSection(it) }
             SettingLine("时间显示日期", settings.showDateInClock) { viewModel.setShowDateInClock(it) }
@@ -5064,7 +5164,7 @@ internal fun SimpleDialog(
     }
 }
 @Composable
-private fun produceClock(enabled: Boolean = true): Long {
+private fun rememberClockState(enabled: Boolean = true): State<Long> {
     val state = remember { androidx.compose.runtime.mutableLongStateOf(TimeUtils.now()) }
     LaunchedEffect(enabled) {
         state.longValue = TimeUtils.now()
@@ -5075,8 +5175,11 @@ private fun produceClock(enabled: Boolean = true): Long {
             }
         }
     }
-    return state.longValue
+    return state
 }
+
+@Composable
+private fun produceClock(enabled: Boolean = true): Long = rememberClockState(enabled).value
 
 internal fun colorFromArgb(argb: Int): Color = Color(argb)
 
@@ -5108,6 +5211,18 @@ private fun formatDurationToMinute(duration: Duration): String {
 
 private fun formatRunning(startTime: Long, now: Long = TimeUtils.now()): String = formatDuration(Duration.ofMillis(now - startTime))
 
+private fun formatRunningClock(startTime: Long, now: Long): String {
+    val totalSeconds = (now - startTime).coerceAtLeast(0L) / 1000L
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
+    } else {
+        "$minutes:${seconds.toString().padStart(2, '0')}"
+    }
+}
+
 private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): String {
     return if (record.endTime == null) {
         "进行中 · ${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} · ${formatRunning(record.startTime)}"
@@ -5115,15 +5230,6 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
-
-
-
-
-
-
-
-
-
 
 
 

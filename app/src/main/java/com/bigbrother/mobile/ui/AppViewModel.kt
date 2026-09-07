@@ -170,6 +170,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.endRecord(recordId) }
     }
 
+    fun endAllRunningRecords() {
+        viewModelScope.launch { repository.endAllRunningRecords() }
+    }
+
     fun deleteRunningRecord(recordId: String) {
         viewModelScope.launch { repository.deleteRunningRecord(recordId) }
     }
@@ -352,5 +356,4 @@ class MainViewModelFactory(
         return MainViewModel(application) as T
     }
 }
-
 
