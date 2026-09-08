@@ -216,11 +216,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
+import top.yukonga.miuix.kmp.basic.DropdownImpl as MiuixDropdownItem
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.ListPopupColumn as MiuixListPopupColumn
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward as MiuixChevronForward
+import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
@@ -231,6 +238,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 val LocalMainBottomBarPadding = androidx.compose.runtime.compositionLocalOf { 16.dp }
+val LocalCalendarButtonBackdrop = androidx.compose.runtime.compositionLocalOf<LayerBackdrop?> { null }
 
 enum class OnboardingTarget {
     HomeEvents,
@@ -491,6 +499,14 @@ fun AppRoot(
     } else {
         null
     }
+    val calendarButtonBackdrop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        rememberLayerBackdrop {
+            drawRect(surfaceColor)
+            drawContent()
+        }
+    } else {
+        null
+    }
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.targetPage }
@@ -625,11 +641,16 @@ fun AppRoot(
                         .fillMaxSize()
                         .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                 ) {
-                    WallpaperBackground(settings = settings, glassEffectEnabled = settings.glassEffectEnabled)
+                    WallpaperBackground(
+                        settings = settings,
+                        glassEffectEnabled = settings.glassEffectEnabled,
+                        modifier = if (calendarButtonBackdrop != null) Modifier.layerBackdrop(calendarButtonBackdrop) else Modifier
+                    )
                     CompositionLocalProvider(
                         LocalComponentAlpha provides settings.componentAlpha,
                         LocalGlassEffect provides settings.glassEffectEnabled,
-                        LocalMainBottomBarPadding provides mainBottomPadding
+                        LocalMainBottomBarPadding provides mainBottomPadding,
+                        LocalCalendarButtonBackdrop provides calendarButtonBackdrop
                     ) {
                         HorizontalPager(
                             state = pagerState,
@@ -1886,82 +1907,67 @@ private fun TimelineScreen(
 ) {
     val day by viewModel.timelineDate.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().overScrollVertical(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            top = statusBarTop + 12.dp,
-            end = 16.dp,
-            bottom = LocalMainBottomBarPadding.current
-        )
-    ) {
-        item {
-            SectionCard(
-                modifier = Modifier.onGloballyPositioned { coordinates ->
+    Column(modifier = Modifier.fillMaxSize()) {
+        MiuixCalendarHeader(
+            selectedDate = day,
+            mode = CalendarHeaderMode.Day,
+            expanded = calendarExpanded,
+            onExpandedChange = { calendarExpanded = it },
+            onDateSelected = viewModel::setTimelineDate,
+            modifier = Modifier
+                .padding(top = statusBarTop + 12.dp)
+                .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
                 },
-                title = "日期",
-                trailing = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { compactView = !compactView }) {
-                            Text(if (compactView) "比例" else "紧凑", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        IconTextButton("补录", R.drawable.ic_add, onClick = { onAddManualRecord(day) })
-                        TextButton(onClick = { showDatePicker = true }) { Text("跳转") }
-                    }
-                }
-            ) {
-                Text(
-                    TimeUtils.formatDate(TimeUtils.startOfDay(day)),
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleLarge
+            actions = {
+                MiuixLiquidGlassCapsuleButton(
+                    text = if (compactView) "比例" else "紧凑",
+                    onClick = { compactView = !compactView }
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { viewModel.setTimelineDate(day.minusDays(1)) }, modifier = Modifier.weight(1f)) { Text("前一天", maxLines = 1) }
-                    TextButton(onClick = { viewModel.setTimelineDate(LocalDate.now()) }, modifier = Modifier.weight(1f)) { Text("今天", maxLines = 1) }
-                    TextButton(onClick = { viewModel.setTimelineDate(day.plusDays(1)) }, modifier = Modifier.weight(1f)) { Text("后一天", maxLines = 1) }
-                }
-            }
-        }
-        item {
-            Text(
-                if (compactView) "点击色块查看详情，记录按开始时间紧凑排列"
-                else "点击色块查看详情，双指纵向缩放时间轴",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        item {
-            TimelineContent(
-                settings = settings,
-                records = records,
-                day = day,
-                listState = listState,
-                notedRecordIds = notedRecordIds,
-                compactView = compactView,
-                contentActive = contentActive,
-                onRecordClick = onRecordClick
-            )
-        }
-    }
-    if (showDatePicker) {
-        DateWheelDialog(
-            title = "选择日期",
-            initialDate = day,
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                viewModel.setTimelineDate(it)
-                showDatePicker = false
+                Spacer(modifier = Modifier.width(6.dp))
+                MiuixLiquidGlassCapsuleButton(
+                    text = "补录",
+                    onClick = { onAddManualRecord(day) }
+                )
             }
         )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .collapseCalendarOnBodyInteraction(calendarExpanded) { calendarExpanded = false }
+                .overScrollVertical(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 8.dp,
+                end = 16.dp,
+                bottom = LocalMainBottomBarPadding.current
+            )
+        ) {
+            item {
+                Text(
+                    if (compactView) "点击色块查看详情，记录按开始时间紧凑排列"
+                    else "点击色块查看详情，双指纵向缩放时间轴",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            item {
+                TimelineContent(
+                    settings = settings,
+                    records = records,
+                    day = day,
+                    listState = listState,
+                    notedRecordIds = notedRecordIds,
+                    compactView = compactView,
+                    contentActive = contentActive,
+                    onRecordClick = onRecordClick
+                )
+            }
+        }
     }
 }
 
@@ -2035,11 +2041,11 @@ private fun StatsScreen(
     onDateChange: (LocalDate) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     val selectedGroupIdState = rememberSaveable { mutableStateOf("") }
     var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
-    val bounds = remember(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks) {
-        StatsCalculator.rangeFor(range, date, settings.semesterStartDate, settings.weekStartDay, settings.semesterWeeks)
+    val bounds = remember(range, date, settings.semesterStartDate, settings.semesterWeeks) {
+        StatsCalculator.rangeFor(range, date, settings.semesterStartDate, java.time.DayOfWeek.SUNDAY, settings.semesterWeeks)
     }
     val calculationKey = remember(records, events, bounds) { Any() }
     var calculation by remember { mutableStateOf<Pair<Any, StatsResult>?>(null) }
@@ -2052,35 +2058,14 @@ private fun StatsScreen(
         calculation = calculationKey to result
     }
     val result = calculation?.takeIf { it.first === calculationKey }?.second
-    val ranges = listOf(StatsRangeKind.Today, StatsRangeKind.Week, StatsRangeKind.Month, StatsRangeKind.Semester)
-    val labels = listOf("天", "周", "月", "学期")
     val periodStartDate = remember(bounds) { TimeUtils.toLocalDate(bounds.first) }
     val periodEndDate = remember(bounds) { TimeUtils.toLocalDate(bounds.second).minusDays(1) }
-    val periodLabel = when (range) {
-        StatsRangeKind.Today -> periodStartDate.toString()
-        StatsRangeKind.Week -> "$periodStartDate 至 $periodEndDate"
-        StatsRangeKind.Month -> "${periodStartDate.year} 年 ${periodStartDate.monthValue} 月"
-        StatsRangeKind.Semester -> "$periodStartDate 至 $periodEndDate"
+    val calendarMode = when (range) {
+        StatsRangeKind.Today -> CalendarHeaderMode.Day
+        StatsRangeKind.Week -> CalendarHeaderMode.Week
+        StatsRangeKind.Month -> CalendarHeaderMode.Month
+        StatsRangeKind.Semester -> CalendarHeaderMode.Semester
     }
-    val previousLabel = when (range) {
-        StatsRangeKind.Today -> "前一天"
-        StatsRangeKind.Week -> "上一周"
-        StatsRangeKind.Month -> "上个月"
-        StatsRangeKind.Semester -> ""
-    }
-    val currentLabel = when (range) {
-        StatsRangeKind.Today -> "今天"
-        StatsRangeKind.Week -> "本周"
-        StatsRangeKind.Month -> "本月"
-        StatsRangeKind.Semester -> ""
-    }
-    val nextLabel = when (range) {
-        StatsRangeKind.Today -> "后一天"
-        StatsRangeKind.Week -> "下一周"
-        StatsRangeKind.Month -> "下个月"
-        StatsRangeKind.Semester -> ""
-    }
-    val canNavigateDate = range != StatsRangeKind.Semester
     val selectedGroupId = selectedGroupIdState.value
     val resultGroups = result?.groups.orEmpty()
     val selectedGroup = remember(resultGroups, selectedGroupId) { findGroupById(resultGroups, selectedGroupId) }
@@ -2097,102 +2082,39 @@ private fun StatsScreen(
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().overScrollVertical(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(
-            start = 16.dp,
-            top = statusBarTop + 12.dp,
-            end = 16.dp,
-            bottom = LocalMainBottomBarPadding.current
-        )
-    ) {
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)
+    Column(modifier = Modifier.fillMaxSize()) {
+        MiuixCalendarHeader(
+            selectedDate = date,
+            mode = calendarMode,
+            expanded = calendarExpanded,
+            onExpandedChange = { calendarExpanded = it },
+            onDateSelected = onDateChange,
+            semesterStart = periodStartDate,
+            semesterEnd = periodEndDate,
+            modifier = Modifier.padding(top = statusBarTop + 12.dp),
+            actions = {
+                StatsRangeDropdown(
+                    range = range,
+                    onRangeChange = {
+                        calendarExpanded = false
+                        onRangeChange(it)
+                    }
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        labels.forEachIndexed { index, label ->
-                            if (index > 0) Spacer(modifier = Modifier.width(6.dp))
-                            FilterChip(
-                                selected = ranges[index] == range,
-                                onClick = { onRangeChange(ranges[index]) },
-                                label = { Text(label) }
-                            )
-                        }
-                    }
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            periodLabel,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(horizontal = if (canNavigateDate) 56.dp else 0.dp),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        if (canNavigateDate) {
-                            TextButton(
-                                onClick = { showDatePicker = true },
-                                modifier = Modifier.align(Alignment.CenterEnd)
-                            ) {
-                                Text("跳转")
-                            }
-                        }
-                    }
-                    if (canNavigateDate) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    onDateChange(
-                                        when (range) {
-                                            StatsRangeKind.Today -> date.minusDays(1)
-                                            StatsRangeKind.Week -> date.minusWeeks(1)
-                                            StatsRangeKind.Month -> date.minusMonths(1)
-                                            StatsRangeKind.Semester -> date
-                                        }
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text(previousLabel, maxLines = 1) }
-                            TextButton(onClick = { onDateChange(LocalDate.now()) }, modifier = Modifier.weight(1f)) {
-                                Text(currentLabel, maxLines = 1)
-                            }
-                            TextButton(
-                                onClick = {
-                                    onDateChange(
-                                        when (range) {
-                                            StatsRangeKind.Today -> date.plusDays(1)
-                                            StatsRangeKind.Week -> date.plusWeeks(1)
-                                            StatsRangeKind.Month -> date.plusMonths(1)
-                                            StatsRangeKind.Semester -> date
-                                        }
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text(nextLabel, maxLines = 1) }
-                        }
-                    }
-                }
             }
-        }
+        )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .collapseCalendarOnBodyInteraction(calendarExpanded) { calendarExpanded = false }
+                .overScrollVertical(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 8.dp,
+                end = 16.dp,
+                bottom = LocalMainBottomBarPadding.current
+            )
+        ) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 SummaryCard(modifier = Modifier.weight(1f), title = "去重时长", value = result?.let { formatDurationToMinute(it.uniqueTotal) } ?: "—")
@@ -2293,17 +2215,62 @@ private fun StatsScreen(
             }
         }
     }
+}
 
-    if (showDatePicker && canNavigateDate) {
-        DateWheelDialog(
-            title = "选择统计日期",
-            initialDate = date,
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                onDateChange(it)
-                showDatePicker = false
-            }
+}
+
+@Composable
+private fun StatsRangeDropdown(
+    range: StatsRangeKind,
+    onRangeChange: (StatsRangeKind) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val ranges = remember {
+        listOf(
+            StatsRangeKind.Today to "天",
+            StatsRangeKind.Week to "周",
+            StatsRangeKind.Month to "月",
+            StatsRangeKind.Semester to "学期"
         )
+    }
+    val currentLabel = ranges.first { it.first == range }.second
+
+    Box {
+        MiuixLiquidGlassCapsuleButton(
+            onClick = { expanded = true },
+            contentDescription = "选择统计范围"
+        ) {
+            top.yukonga.miuix.kmp.basic.Text(currentLabel)
+            MiuixIcon(
+                imageVector = MiuixIcons.MiuixChevronForward,
+                contentDescription = "选择统计范围",
+                modifier = Modifier
+                    .padding(start = 6.dp)
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = 90f }
+            )
+        }
+        OverlayListPopup(
+            show = expanded,
+            enableWindowDim = false,
+            onDismissRequest = { expanded = false },
+            minWidth = 148.dp
+        ) {
+            MiuixListPopupColumn {
+                ranges.forEachIndexed { index, (candidate, label) ->
+                    MiuixDropdownItem(
+                        text = label,
+                        optionSize = ranges.size,
+                        isSelected = candidate == range,
+                        index = index,
+                        onSelectedIndexChange = {
+                            expanded = false
+                            onRangeChange(candidate)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -5230,19 +5197,6 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

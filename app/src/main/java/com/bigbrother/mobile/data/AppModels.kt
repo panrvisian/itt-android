@@ -32,7 +32,7 @@ data class AppSettings(
     val use24Hour: Boolean = true,
     val totalDurationMode: TotalDurationMode = TotalDurationMode.Sum,
     val semesterStartDate: LocalDate = LocalDate.of(LocalDate.now().year, 9, 1),
-    val weekStartDay: DayOfWeek = DayOfWeek.MONDAY,
+    val weekStartDay: DayOfWeek = DayOfWeek.SUNDAY,
     val semesterWeeks: Int = 18,
     val wallpaperMode: WallpaperMode = WallpaperMode.Default,
     val wallpaperUri: String? = null,
@@ -100,6 +100,5 @@ data class AppBundle(
     val records: List<RecordEntity> = emptyList(),
     val noteImages: List<NoteImageEntity> = emptyList()
 )
-
 
 
