@@ -3,6 +3,7 @@ package com.bigbrother.mobile.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +50,7 @@ import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
 import top.yukonga.miuix.kmp.blur.blur
 import top.yukonga.miuix.kmp.blur.drawBackdrop
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.BloomStroke
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.highlight.LightPosition
@@ -358,6 +361,42 @@ fun MiuixLiquidGlassCapsuleButton(
             style = MiuixTheme.textStyles.button
         )
     }
+}
+
+@Composable
+fun MiuixLiquidGlassMenuSurface(
+    backdrop: LayerBackdrop?,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val containerColor = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.52f)
+    val glassModifier = if (backdrop != null) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(14.dp.toPx(), 14.dp.toPx())
+                lens(
+                    refractionHeight = 22.dp.toPx(),
+                    refractionAmount = 16.dp.toPx()
+                )
+            },
+            highlight = { calendarButtonHighlight },
+            onDrawSurface = { drawRect(containerColor) }
+        )
+    } else {
+        Modifier.background(containerColor, shape)
+    }
+
+    Box(
+        modifier = modifier
+            .then(glassModifier)
+            .clip(shape)
+            .border(1.dp, Color.White.copy(alpha = 0.14f), shape),
+        content = { content() }
+    )
 }
 
 @Composable

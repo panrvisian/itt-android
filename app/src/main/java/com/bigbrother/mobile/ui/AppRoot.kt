@@ -92,7 +92,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -220,14 +219,17 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import top.yukonga.miuix.kmp.basic.DropdownImpl as MiuixDropdownItem
 import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
 import top.yukonga.miuix.kmp.basic.ListPopupColumn as MiuixListPopupColumn
+import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward as MiuixChevronForward
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
@@ -614,8 +616,9 @@ fun AppRoot(
                     }
                 }
         ) {
-            Scaffold(
+            MiuixScaffold(
                 containerColor = Color.Transparent,
+                contentWindowInsets = androidx.compose.material3.ScaffoldDefaults.contentWindowInsets,
                 bottomBar = {
                     AppBottomBar(
                         selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0),
@@ -2234,10 +2237,12 @@ private fun StatsRangeDropdown(
         )
     }
     val currentLabel = ranges.first { it.first == range }.second
+    val menuBackdrop = LocalCalendarButtonBackdrop.current
+    val popupColors = MiuixTheme.colorScheme.copy(surfaceContainer = Color.Transparent)
 
     Box {
         MiuixLiquidGlassCapsuleButton(
-            onClick = { expanded = true },
+            onClick = { expanded = !expanded },
             contentDescription = "选择统计范围"
         ) {
             top.yukonga.miuix.kmp.basic.Text(currentLabel)
@@ -2247,27 +2252,32 @@ private fun StatsRangeDropdown(
                 modifier = Modifier
                     .padding(start = 6.dp)
                     .size(18.dp)
-                    .graphicsLayer { rotationZ = 90f }
+                    .graphicsLayer { rotationZ = if (expanded) -90f else 90f }
             )
         }
-        OverlayListPopup(
-            show = expanded,
-            enableWindowDim = false,
-            onDismissRequest = { expanded = false },
-            minWidth = 148.dp
-        ) {
-            MiuixListPopupColumn {
-                ranges.forEachIndexed { index, (candidate, label) ->
-                    MiuixDropdownItem(
-                        text = label,
-                        optionSize = ranges.size,
-                        isSelected = candidate == range,
-                        index = index,
-                        onSelectedIndexChange = {
-                            expanded = false
-                            onRangeChange(candidate)
+        MiuixTheme(colors = popupColors) {
+            OverlayListPopup(
+                show = expanded,
+                alignment = PopupPositionProvider.Align.End,
+                enableWindowDim = false,
+                onDismissRequest = { expanded = false },
+                minWidth = 148.dp
+            ) {
+                MiuixLiquidGlassMenuSurface(backdrop = menuBackdrop) {
+                    MiuixListPopupColumn {
+                        ranges.forEachIndexed { index, (candidate, label) ->
+                            MiuixDropdownItem(
+                                text = label,
+                                optionSize = ranges.size,
+                                isSelected = candidate == range,
+                                index = index,
+                                onSelectedIndexChange = {
+                                    expanded = false
+                                    onRangeChange(candidate)
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -5197,7 +5207,6 @@ private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): Strin
         "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
-
 
 
 
