@@ -122,7 +122,11 @@ private class InnerShadowNode(
             prevRadius = radius
         }
 
-        layer.record {
+        layer.record(
+            density = this,
+            layoutDirection = layoutDirection,
+            size = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt())
+        ) {
             drawContext.canvas.let { canvas ->
                 canvas.save()
                 canvas.clipPath(clipPath)
