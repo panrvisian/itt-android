@@ -124,6 +124,7 @@ class QuickEventGridWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, com.bigbrother.mobile.R.layout.widget_quick_event_grid)
             val configuredEventIds = QuickEventWidgetStore.gridEventIds(context, appWidgetId)
+            val bgAlpha = QuickEventWidgetStore.widgetAlpha(context, appWidgetId)
 
             for (slotIndex in 0 until QuickEventWidgetStore.GRID_SLOT_COUNT) {
                 val eventId = configuredEventIds[slotIndex]
@@ -132,37 +133,45 @@ class QuickEventGridWidgetProvider : AppWidgetProvider() {
                         context = context,
                         pendingIntent = configureSlotPendingIntent(context, appWidgetId, slotIndex),
                         text = "＋",
-                        contentDescription = "未分配事件，点击选择"
+                        contentDescription = "未分配事件，点击选择",
+                        bgAlpha = bgAlpha
                     )
 
                     else -> {
                         val event = events.firstOrNull { it.id == eventId && !it.isDeleted }
                         if (event == null) {
                             QuickEventWidgetCellRenderer.unavailable(
-                                context,
-                                configureSlotPendingIntent(context, appWidgetId, slotIndex)
+                                context = context,
+                                pendingIntent = configureSlotPendingIntent(context, appWidgetId, slotIndex),
+                                bgAlpha = bgAlpha
                             )
                         } else {
                             val group = groups.firstOrNull { it.id == event.groupId }
-                            val running = records.any { it.eventId == event.id && it.endTime == null }
+                            val runningRecord = records.firstOrNull { it.eventId == event.id && it.endTime == null }
                             QuickEventWidgetCellRenderer.configured(
                                 context = context,
                                 event = event,
                                 group = group,
-                                running = running,
+                                runningStartTime = runningRecord?.startTime,
+                                bgAlpha = bgAlpha,
                                 pendingIntent = togglePendingIntent(context, appWidgetId, slotIndex)
                             )
                         }
                     }
                 }
-                views.addView(CELL_CONTAINER_IDS[slotIndex], cell)
+                val containerId = CELL_CONTAINER_IDS[slotIndex]
+                views.removeAllViews(containerId)
+                views.addView(containerId, cell)
             }
 
+            val editContainerId = CELL_CONTAINER_IDS[EDIT_SLOT_INDEX]
+            views.removeAllViews(editContainerId)
             views.addView(
-                CELL_CONTAINER_IDS[EDIT_SLOT_INDEX],
+                editContainerId,
                 QuickEventWidgetCellRenderer.edit(
-                    context,
-                    editPendingIntent(context, appWidgetId)
+                    context = context,
+                    pendingIntent = editPendingIntent(context, appWidgetId),
+                    bgAlpha = bgAlpha
                 )
             )
             manager.updateAppWidget(appWidgetId, views)

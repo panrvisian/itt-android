@@ -3,33 +3,47 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_background"
     android:clickable="true"
     android:focusable="true"
     android:padding="3dp">
 
+    <!-- Translucent timeline card background image -->
+    <ImageView
+        android:id="@+id/widget_bg_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="@null" />
+
+    <!-- Always centered Event Name (16sp bold, gravity center) -->
     <TextView
         android:id="@+id/widget_name_single"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:ellipsize="end"
-        android:fontFamily="sans"
+        android:fontFamily="sans-serif-medium"
         android:gravity="center"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:textColor="@android:color/white"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/widget_status_dot"
+    <!-- Live Chronometer Timer at bottom when running -->
+    <Chronometer
+        android:id="@+id/widget_chronometer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
+        android:layout_gravity="bottom|center_horizontal"
+        android:fontFamily="sans-serif-medium"
+        android:gravity="center"
         android:includeFontPadding="false"
-        android:text="●"
-        android:textColor="@android:color/white"
-        android:textSize="12sp"
+        android:maxLines="1"
+        android:paddingBottom="2dp"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
         android:textStyle="bold"
         android:visibility="gone" />
 

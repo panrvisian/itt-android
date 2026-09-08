@@ -10,8 +10,20 @@ internal object QuickEventWidgetStore {
     private const val EVENT_ID_PREFIX = "event_id_"
     private const val GRID_EVENT_ID_PREFIX = "grid_event_id_"
 
+    const val DEFAULT_ALPHA = 0.22f
+    private const val ALPHA_PREFIX = "widget_alpha_"
+
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    fun widgetAlpha(context: Context, appWidgetId: Int): Float =
+        preferences(context).getFloat(ALPHA_PREFIX + appWidgetId, DEFAULT_ALPHA).coerceIn(0.05f, 1f)
+
+    fun saveWidgetAlpha(context: Context, appWidgetId: Int, alpha: Float) {
+        preferences(context).edit()
+            .putFloat(ALPHA_PREFIX + appWidgetId, alpha.coerceIn(0.05f, 1f))
+            .apply()
+    }
 
     fun eventId(context: Context, appWidgetId: Int): String? =
         preferences(context).getString(EVENT_ID_PREFIX + appWidgetId, null)
@@ -56,6 +68,7 @@ internal object QuickEventWidgetStore {
     fun remove(context: Context, appWidgetId: Int) {
         preferences(context).edit().apply {
             remove(EVENT_ID_PREFIX + appWidgetId)
+            remove(ALPHA_PREFIX + appWidgetId)
             for (slotIndex in 0 until GRID_SLOT_COUNT) {
                 remove(gridKey(appWidgetId, slotIndex))
             }
@@ -67,6 +80,9 @@ internal object QuickEventWidgetStore {
         val editor = preferences.edit()
         preferences.getString(EVENT_ID_PREFIX + oldAppWidgetId, null)?.let {
             editor.putString(EVENT_ID_PREFIX + newAppWidgetId, it)
+        }
+        if (preferences.contains(ALPHA_PREFIX + oldAppWidgetId)) {
+            editor.putFloat(ALPHA_PREFIX + newAppWidgetId, preferences.getFloat(ALPHA_PREFIX + oldAppWidgetId, DEFAULT_ALPHA))
         }
         for (slotIndex in 0 until GRID_SLOT_COUNT) {
             preferences.getString(gridKey(oldAppWidgetId, slotIndex), null)?.let {

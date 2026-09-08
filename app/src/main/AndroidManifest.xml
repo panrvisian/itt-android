@@ -46,6 +46,9 @@
             android:name=".widget.QuickEventWidgetConfigureActivity"
             android:exported="true"
             android:label="@string/widget_configure_title"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
             android:theme="@style/Theme.BigBrotherMobile">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />

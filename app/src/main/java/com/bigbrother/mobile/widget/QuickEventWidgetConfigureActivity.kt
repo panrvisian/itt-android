@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.bigbrother.mobile.widget
 
@@ -28,15 +28,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,7 +68,7 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
             AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID
         )
-        setResult(Activity.RESULT_CANCELED)
+        setResult(RESULT_CANCELED)
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
             finish()
             return
@@ -98,6 +101,7 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
         } else {
             emptyList()
         }
+        val initialAlpha = QuickEventWidgetStore.widgetAlpha(this, appWidgetId)
 
         setContent {
             LaunchedEffect(Unit) { repository.initialize() }
@@ -110,7 +114,8 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
                         groups = groups,
                         events = events,
                         initialEventIds = initialGridEventIds,
-                        onCancel = { finish() },
+                        initialAlpha = initialAlpha,
+                        onCancel = { finish(); returnToHomeScreen() },
                         onSave = ::saveGridEvents
                     )
                 } else {
@@ -118,7 +123,8 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
                         groups = groups,
                         events = events,
                         initialEventId = initialEventId,
-                        onCancel = { finish() },
+                        initialAlpha = initialAlpha,
+                        onCancel = { finish(); returnToHomeScreen() },
                         onSave = ::saveEvent,
                         title = if (gridMode) "选择小组件事件" else "设置桌面小组件",
                         saveLabel = if (gridMode) "保存" else "添加"
@@ -128,24 +134,40 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
         }
     }
 
-    private fun saveEvent(eventId: String) {
+    private fun returnToHomeScreen() {
+        try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(homeIntent)
+        } catch (_: Throwable) {
+            // Fallback gracefully
+        }
+    }
+
+    private fun saveEvent(eventId: String, alpha: Float) {
         if (gridMode && gridSlotIndex in 0 until QuickEventWidgetStore.GRID_SLOT_COUNT) {
             QuickEventWidgetStore.saveGridEventId(this, appWidgetId, gridSlotIndex, eventId)
         } else {
             QuickEventWidgetStore.saveEventId(this, appWidgetId, eventId)
         }
+        QuickEventWidgetStore.saveWidgetAlpha(this, appWidgetId, alpha)
         QuickEventWidgetProvider.requestRefresh(this)
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        setResult(Activity.RESULT_OK, result)
+        setResult(RESULT_OK, result)
         finish()
+        returnToHomeScreen()
     }
 
-    private fun saveGridEvents(eventIds: List<String?>) {
+    private fun saveGridEvents(eventIds: List<String?>, alpha: Float) {
         QuickEventWidgetStore.saveGridEventIds(this, appWidgetId, eventIds)
+        QuickEventWidgetStore.saveWidgetAlpha(this, appWidgetId, alpha)
         QuickEventWidgetProvider.requestRefresh(this)
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        setResult(Activity.RESULT_OK, result)
+        setResult(RESULT_OK, result)
         finish()
+        returnToHomeScreen()
     }
 }
 
@@ -154,10 +176,12 @@ private fun QuickEventGridWidgetManagementScreen(
     groups: List<GroupEntity>,
     events: List<EventEntity>,
     initialEventIds: List<String?>,
+    initialAlpha: Float,
     onCancel: () -> Unit,
-    onSave: (List<String?>) -> Unit
+    onSave: (List<String?>, Float) -> Unit
 ) {
     var slotEventIds by remember(initialEventIds) { mutableStateOf(initialEventIds.toList()) }
+    var widgetAlpha by remember(initialAlpha) { mutableFloatStateOf(initialAlpha) }
     var editingSlotIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val visibleEvents = remember(events) { events.filterNot { it.isDeleted } }
     val groupById = remember(groups) { groups.associateBy { it.id } }
@@ -168,14 +192,16 @@ private fun QuickEventGridWidgetManagementScreen(
             groups = groups,
             events = events,
             initialEventId = slotEventIds.getOrNull(selectedSlot),
+            initialAlpha = widgetAlpha,
             onCancel = { editingSlotIndex = null },
-            onSave = { eventId ->
+            onSave = { eventId, alpha ->
                 val updated = slotEventIds.toMutableList()
                 while (updated.size < QuickEventWidgetStore.GRID_SLOT_COUNT) {
                     updated += null
                 }
                 updated[selectedSlot] = eventId
                 slotEventIds = updated
+                widgetAlpha = alpha
                 editingSlotIndex = null
             },
             title = "选择第 ${selectedSlot + 1} 个事件",
@@ -267,6 +293,40 @@ private fun QuickEventGridWidgetManagementScreen(
                         }
                     }
                 }
+
+                // Transparency Slider Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("卡片透明度", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "${((1f - widgetAlpha) * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Slider(
+                            value = (1f - widgetAlpha).coerceIn(0f, 0.95f),
+                            onValueChange = { widgetAlpha = (1f - it).coerceIn(0.05f, 1f) },
+                            valueRange = 0f..0.95f
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -274,7 +334,7 @@ private fun QuickEventGridWidgetManagementScreen(
                     OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
                         Text("取消")
                     }
-                    Button(onClick = { onSave(slotEventIds) }, modifier = Modifier.weight(1f)) {
+                    Button(onClick = { onSave(slotEventIds, widgetAlpha) }, modifier = Modifier.weight(1f)) {
                         Text("完成")
                     }
                 }
@@ -288,8 +348,9 @@ private fun QuickEventWidgetConfigureScreen(
     groups: List<GroupEntity>,
     events: List<EventEntity>,
     initialEventId: String?,
+    initialAlpha: Float = QuickEventWidgetStore.DEFAULT_ALPHA,
     onCancel: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (String, Float) -> Unit,
     title: String = "设置桌面小组件",
     saveLabel: String = "添加"
 ) {
@@ -307,6 +368,7 @@ private fun QuickEventWidgetConfigureScreen(
     var selectedEventId by rememberSaveable(initialEvent?.id) {
         mutableStateOf(initialEvent?.id)
     }
+    var widgetAlpha by remember(initialAlpha) { mutableFloatStateOf(initialAlpha) }
     val groupEvents = remember(selectedGroupId, visibleEvents) {
         visibleEvents.filter { it.groupId == selectedGroupId }
             .sortedWith(compareByDescending<EventEntity> { it.isFavorite }.thenBy { it.sortOrder }.thenBy { it.name })
@@ -341,7 +403,7 @@ private fun QuickEventWidgetConfigureScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 190.dp),
+                        .heightIn(max = 160.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(visibleGroups, key = { it.id }) { group ->
@@ -396,6 +458,39 @@ private fun QuickEventWidgetConfigureScreen(
                 }
             }
 
+            // Transparency Slider Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("卡片透明度", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${((1f - widgetAlpha) * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Slider(
+                        value = (1f - widgetAlpha).coerceIn(0f, 0.95f),
+                        onValueChange = { widgetAlpha = (1f - it).coerceIn(0.05f, 1f) },
+                        valueRange = 0f..0.95f
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(2.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -405,7 +500,7 @@ private fun QuickEventWidgetConfigureScreen(
                     Text("取消")
                 }
                 Button(
-                    onClick = { selectedEventId?.let(onSave) },
+                    onClick = { selectedEventId?.let { onSave(it, widgetAlpha) } },
                     enabled = selectedEventId != null,
                     modifier = Modifier.weight(1f)
                 ) {
