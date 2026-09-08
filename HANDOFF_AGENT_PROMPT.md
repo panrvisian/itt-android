@@ -231,6 +231,14 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - `ui/MainActivity.kt` 在应用入口调用 `enableEdgeToEdge()`；`ui/Theme.kt` 统一设置系统栏为透明，关闭导航栏对比度强制和分隔线，并根据当前主题设置系统栏图标颜色。
 - 现有 Compose `Scaffold` 和系统 Insets 处理继续保留，底部导航及其他底部控件不能被手势横条遮挡。
 
+### 9. 桌面小组件
+
+- 支持 1×1 快速计时小组件与 4×2 矩阵组合小组件（包含 7 个事件格与 1 个固定编辑格）。
+- **视觉风格与时间轴对齐**：采用与时间轴卡片相同的 `16dp` 圆角磨砂半透明风格，背景为 `22%` 半透明分组色彩填充（`groupColor.copy(alpha = 0.22)`），外加 `1.5dp` 宽度、`60%` 透明度细描边边框（`groupColor.copy(alpha = 0.60)`），可自然透出桌面壁纸。
+- **透明度调节**：小组件编辑界面提供“卡片透明度”无级调节滑块（`0% ~ 95%`），透明度独立持久化并即时向桌面广播刷新。
+- **文字排版与零耗电实时计时**：事件名称固定为 `16sp` 加粗且正中央全居中对齐（`gravity="center"`），进行中与非进行中状态下字号与位置保持 100% 固定不移动、不缩放；事件进行中时，卡片正下方底部显示 `16sp` 加粗的 `Chronometer` 实时动态计时器（1小时内显示 `MM:SS`，超过1小时显示 `H:MM:SS`），由 Android 桌面（Launcher）底层原生零耗电渲染。
+- **编辑导航流**：小组件配置页面（`QuickEventWidgetConfigureActivity`）配置独立任务栈（`taskAffinity=""`, `excludeFromRecents="true"`, `noHistory="true"`），点击“保存”、“完成”或“取消”后通过 `ACTION_MAIN + CATEGORY_HOME` 直接返回系统桌面，不再调出或返回 App 主界面。
+
 ## 五、跨天记录规则
 
 - `AppRepository.normalizeOvernightInTransaction` 按系统时区和自然日拆分跨天记录。
@@ -253,6 +261,7 @@ SDK Manager 必须安装：Android SDK Platform 37.0、Android SDK Build Tools 3
 - 自选壁纸按实际图片尺寸计算铺满比例，支持拖动和双指缩放取景；缩放下限 `1f`，偏移按可移动范围计算，不留白。
 - `Theme.kt` 全局形状：small `14dp`、medium `20dp`、large `28dp`。
 - 新手引导按具体目标定位：首页时钟区、时间轴日期控件、备注日期控件、统计饼图、设置菜单项；切页后等待目标布局完成再显示，目标不存在不显示遮罩；提示卡按目标位置上下避让。
+- 桌面小组件 UI 与交互重构：小组件卡片视觉对齐时间轴半透明磨砂风格（16dp 圆角，22% 透明填充，60% 透明细描边）；小组件编辑界面新增卡片透明度调节滑块；事件名称固定 16sp 居中，进行中事件底部使用系统 Chronometer 原生零耗电动态计时（16sp）；配置页面完成/保存/取消后通过 HOME Intent 直接返回系统桌面。
 
 验证状态：
 

@@ -115,27 +115,31 @@ class QuickEventWidgetProvider : AppWidgetProvider() {
 
         appWidgetIds.forEach { appWidgetId ->
             val eventId = QuickEventWidgetStore.eventId(context, appWidgetId)
+            val bgAlpha = QuickEventWidgetStore.widgetAlpha(context, appWidgetId)
             val views = when {
                 eventId == null -> QuickEventWidgetCellRenderer.unconfigured(
-                    context,
-                    configurePendingIntent(context, appWidgetId)
+                    context = context,
+                    pendingIntent = configurePendingIntent(context, appWidgetId),
+                    bgAlpha = bgAlpha
                 )
 
                 else -> {
                     val event = events.firstOrNull { it.id == eventId && !it.isDeleted }
                     if (event == null) {
                         QuickEventWidgetCellRenderer.unavailable(
-                            context,
-                            configurePendingIntent(context, appWidgetId)
+                            context = context,
+                            pendingIntent = configurePendingIntent(context, appWidgetId),
+                            bgAlpha = bgAlpha
                         )
                     } else {
                         val group = groups.firstOrNull { it.id == event.groupId }
-                        val running = records.any { it.eventId == event.id && it.endTime == null }
+                        val runningRecord = records.firstOrNull { it.eventId == event.id && it.endTime == null }
                         QuickEventWidgetCellRenderer.configured(
                             context = context,
                             event = event,
                             group = group,
-                            running = running,
+                            runningStartTime = runningRecord?.startTime,
+                            bgAlpha = bgAlpha,
                             pendingIntent = togglePendingIntent(context, appWidgetId)
                         )
                     }
