@@ -165,7 +165,6 @@ fun MiuixCalendarHeader(
                         CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
                         CalendarHeaderMode.Semester -> Unit
                     }
-                    onExpandedChange(false)
                 }
             )
             Row(
@@ -243,10 +242,7 @@ fun MiuixCalendarHeader(
                     MonthCalendar(
                         month = month,
                         selectedDate = selectedDate,
-                        onDateSelected = {
-                            onDateSelected(it)
-                            onExpandedChange(false)
-                        }
+                        onDateSelected = onDateSelected
                     )
                 }
             }
