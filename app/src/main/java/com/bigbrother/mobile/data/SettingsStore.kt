@@ -89,7 +89,7 @@ class SettingsStore(private val context: Context) {
                 else -> TotalDurationMode.Sum
             },
             semesterStartDate = LocalDate.of(year, month, day),
-            weekStartDay = DayOfWeek.of(this[intPreferencesKey(KEY_WEEK_START)] ?: 1),
+            weekStartDay = DayOfWeek.of(this[intPreferencesKey(KEY_WEEK_START)] ?: DayOfWeek.SUNDAY.value),
             semesterWeeks = this[intPreferencesKey(KEY_SEMESTER_WEEKS)] ?: 18,
             wallpaperMode = when (this[stringPreferencesKey(KEY_WALLPAPER_MODE)]) {
                 "image" -> WallpaperMode.Image

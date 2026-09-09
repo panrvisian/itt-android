@@ -98,7 +98,7 @@ fun NotesScreen(
     onOpen: (RecordEntity) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     val calculationKey = remember(notedRecords, date) { Any() }
     var calculation by remember { mutableStateOf<Pair<Any, List<RecordEntity>>?>(null) }
     LaunchedEffect(contentLoaded, calculationKey) {
@@ -111,71 +111,50 @@ fun NotesScreen(
     val dayRecords = calculation?.takeIf { it.first === calculationKey }?.second
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().overScrollVertical(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp,
-            top = statusBarTop + 12.dp,
-            end = 16.dp,
-            bottom = LocalMainBottomBarPadding.current
-        )
-    ) {
-        item {
-            SectionCard(
-                modifier = Modifier.onGloballyPositioned { coordinates ->
+    Column(modifier = Modifier.fillMaxSize()) {
+        MiuixCalendarHeader(
+            selectedDate = date,
+            mode = CalendarHeaderMode.Day,
+            expanded = calendarExpanded,
+            onExpandedChange = { calendarExpanded = it },
+            onDateSelected = onDateChange,
+            modifier = Modifier
+                .padding(top = statusBarTop + 12.dp)
+                .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.NotesControls, coordinates.boundsInRoot())
-                },
-                title = "日期",
-                trailing = {
-                    TextButton(onClick = { showDatePicker = true }) { Text("跳转") }
                 }
-            ) {
-                Text(
-                    TimeUtils.formatDate(TimeUtils.startOfDay(date)),
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { onDateChange(date.minusDays(1)) }, modifier = Modifier.weight(1f)) { Text("前一天", maxLines = 1) }
-                    TextButton(onClick = { onDateChange(LocalDate.now()) }, modifier = Modifier.weight(1f)) { Text("今天", maxLines = 1) }
-                    TextButton(onClick = { onDateChange(date.plusDays(1)) }, modifier = Modifier.weight(1f)) { Text("后一天", maxLines = 1) }
-                }
-            }
-        }
-        if (!contentActive) {
-            item { Text("打开备注页后加载记录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        } else if (!contentLoaded) {
-            item { Text("正在构建备注索引…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        } else if (dayRecords == null) {
-            item { Text("正在加载备注…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        } else if (dayRecords.isEmpty()) {
-            item { Text("这一天没有备注", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        } else {
-            items(dayRecords, key = { it.id }) { record ->
-                NoteListRow(
-                    record = record,
-                    isImageOnly = record.noteText.isBlank() && record.id in imageRecordIds,
-                    onClick = { onOpen(record) }
-                )
-            }
-        }
-    }
-
-    if (showDatePicker) {
-        DateWheelDialog(
-            title = "选择日期",
-            initialDate = date,
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                onDateChange(it)
-                showDatePicker = false
-            }
         )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .collapseCalendarOnBodyInteraction(calendarExpanded) { calendarExpanded = false }
+                .overScrollVertical(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 16.dp,
+                top = 8.dp,
+                end = 16.dp,
+                bottom = LocalMainBottomBarPadding.current
+            )
+        ) {
+            if (!contentActive) {
+                item { Text("打开备注页后加载记录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else if (!contentLoaded) {
+                item { Text("正在构建备注索引…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else if (dayRecords == null) {
+                item { Text("正在加载备注…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else if (dayRecords.isEmpty()) {
+                item { Text("这一天没有备注", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            } else {
+                items(dayRecords, key = { it.id }) { record ->
+                    NoteListRow(
+                        record = record,
+                        isImageOnly = record.noteText.isBlank() && record.id in imageRecordIds,
+                        onClick = { onOpen(record) }
+                    )
+                }
+            }
+        }
     }
 }
 
