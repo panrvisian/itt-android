@@ -45,7 +45,7 @@ internal fun AppBottomBar(
         )
     } else {
         MiuixNavigationBar(
-            color = MiuixTheme.colorScheme.surface,
+            color = MiuixTheme.colorScheme.surface.copy(alpha = LocalComponentAlpha.current),
             showDivider = true,
         ) {
             appBottomBarDestinations.forEachIndexed { index, destination ->

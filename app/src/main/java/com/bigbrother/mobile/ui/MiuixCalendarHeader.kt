@@ -143,10 +143,17 @@ fun MiuixCalendarHeader(
         CalendarHeaderMode.Semester -> "当前学期"
     }
 
+    val componentAlpha = LocalComponentAlpha.current
+    val headerBg = if (LocalGlassEffect.current) {
+        Color.Transparent
+    } else {
+        MaterialTheme.colorScheme.background.copy(alpha = componentAlpha)
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(headerBg)
             .animateContentSize(animationSpec = spring(dampingRatio = 0.9f, stiffness = 500f))
             .padding(horizontal = 20.dp)
     ) {
@@ -165,7 +172,6 @@ fun MiuixCalendarHeader(
                         CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
                         CalendarHeaderMode.Semester -> Unit
                     }
-                    onExpandedChange(false)
                 }
             )
             Row(
@@ -243,10 +249,7 @@ fun MiuixCalendarHeader(
                     MonthCalendar(
                         month = month,
                         selectedDate = selectedDate,
-                        onDateSelected = {
-                            onDateSelected(it)
-                            onExpandedChange(false)
-                        }
+                        onDateSelected = onDateSelected
                     )
                 }
             }
@@ -303,8 +306,16 @@ fun MiuixLiquidGlassCapsuleButton(
     contentDescription: String? = null,
     content: @Composable RowScope.() -> Unit
 ) {
-    val backdrop = LocalCalendarButtonBackdrop.current
-    val containerColor = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
+    val glassEffectEnabled = LocalGlassEffect.current
+    val backdrop = if (glassEffectEnabled) LocalCalendarButtonBackdrop.current else null
+    val isDark = LocalIsDarkTheme.current
+
+    val containerColor = if (glassEffectEnabled) {
+        MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.42f)
+    } else {
+        MiuixTheme.colorScheme.surfaceContainerHigh
+    }
+
     val glassModifier = if (backdrop != null) {
         Modifier.drawBackdrop(
             backdrop = backdrop,
@@ -321,7 +332,13 @@ fun MiuixLiquidGlassCapsuleButton(
             onDrawSurface = { drawRect(containerColor) }
         )
     } else {
-        Modifier.background(containerColor, CircleShape)
+        Modifier
+            .background(containerColor, CircleShape)
+            .border(
+                width = 1.dp,
+                color = MiuixTheme.colorScheme.outline.copy(alpha = if (isDark) 0.35f else 0.18f),
+                shape = CircleShape
+            )
     }
     MiuixButton(
         onClick = onClick,
@@ -370,10 +387,13 @@ fun MiuixLiquidGlassMenuSurface(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val glassEffectEnabled = LocalGlassEffect.current
     val shape = RoundedCornerShape(18.dp)
-    val glassModifier = if (backdrop != null) {
+    val activeBackdrop = if (glassEffectEnabled) backdrop else null
+
+    val glassModifier = if (activeBackdrop != null) {
         Modifier.drawBackdrop(
-            backdrop = backdrop,
+            backdrop = activeBackdrop,
             shape = { shape },
             effects = {
                 vibrancy()
@@ -394,7 +414,11 @@ fun MiuixLiquidGlassMenuSurface(
         modifier = modifier
             .then(glassModifier)
             .clip(shape)
-            .border(1.dp, Color.White.copy(alpha = 0.14f), shape),
+            .border(
+                width = 1.dp,
+                color = if (glassEffectEnabled) Color.White.copy(alpha = 0.14f) else MiuixTheme.colorScheme.outline.copy(alpha = 0.2f),
+                shape = shape
+            ),
         content = { content() }
     )
 }

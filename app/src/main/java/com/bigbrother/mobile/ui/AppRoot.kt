@@ -3,6 +3,7 @@
 package com.bigbrother.mobile.ui
 
 import android.net.Uri
+import androidx.core.net.toUri
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
@@ -12,15 +13,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -351,7 +349,6 @@ fun AppRoot(
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val statsRange by viewModel.statsRange.collectAsStateWithLifecycle()
     val statsDate by viewModel.statsDate.collectAsStateWithLifecycle()
-    val timelineDate by viewModel.timelineDate.collectAsStateWithLifecycle()
     val notesDate by viewModel.notesDate.collectAsStateWithLifecycle()
     val homeContentReady by viewModel.homeContentReady.collectAsStateWithLifecycle()
 
@@ -363,7 +360,7 @@ fun AppRoot(
     var showSemesterStartDialog by rememberSaveable { mutableStateOf(false) }
     var showWallpaperEditor by rememberSaveable { mutableStateOf(false) }
 
-    val activeSettingsPage = SettingsPage.values().firstOrNull { it.name == activeSettingsPageName } ?: SettingsPage.Main
+    val activeSettingsPage = SettingsPage.entries.firstOrNull { it.name == activeSettingsPageName } ?: SettingsPage.Main
     val isSettingsSubpage = activeSettingsPage != SettingsPage.Main
 
     LaunchedEffect(selectedTab) {
@@ -457,6 +454,8 @@ fun AppRoot(
             preloadedPageRadius = radius
             withFrameNanos { }
         }
+        // Allow GPU HWUI/Skia pipeline to pre-warm AGSL shaders and allocate offscreen texture layers during Splash
+        withFrameNanos { }
         withFrameNanos { }
         startupPreloadComplete = true
         startupReadyCallback()
@@ -572,7 +571,7 @@ fun AppRoot(
 
                 if (isAtLeftBoundary || isAtRightBoundary || boundaryOverscrollOffset != 0f) {
                     val maxBound = 1080f
-                    val ratio = (kotlin.math.abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
+                    val ratio = (abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
                     val factor = (1f - Math.pow(ratio.toDouble(), 0.75).toFloat()) * 0.5f
                     val delta = available.x * factor.coerceAtLeast(0.05f)
 
@@ -651,9 +650,9 @@ fun AppRoot(
                     )
                     CompositionLocalProvider(
                         LocalComponentAlpha provides settings.componentAlpha,
-                        LocalGlassEffect provides settings.glassEffectEnabled,
+                        LocalGlassEffect provides (settings.glassEffectEnabled || useLiquidGlassBottomBar),
                         LocalMainBottomBarPadding provides mainBottomPadding,
-                        LocalCalendarButtonBackdrop provides calendarButtonBackdrop
+                        LocalCalendarButtonBackdrop provides (if (settings.glassEffectEnabled || useLiquidGlassBottomBar) calendarButtonBackdrop else null)
                     ) {
                         HorizontalPager(
                             state = pagerState,
@@ -669,6 +668,7 @@ fun AppRoot(
                                 .nestedScroll(boundaryNestedScrollConnection)
                                 .graphicsLayer {
                                     translationX = animatedBoundaryOffset
+                                    compositingStrategy = CompositingStrategy.Offscreen
                                 }
                         ) { page ->
                             val tab = tabs[page]
@@ -1369,11 +1369,13 @@ private fun HomeDashboardWidgets(
 ) {
     val isWorking = running.isNotEmpty()
     val haptics = LocalHapticFeedback.current
-    val statusCardColor = if (isWorking) {
+    val componentAlpha = LocalComponentAlpha.current
+    val rawStatusColor = if (isWorking) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val statusCardColor = rawStatusColor.copy(alpha = (rawStatusColor.alpha * componentAlpha).coerceIn(0f, 1f))
     val statusContentColor = if (isWorking) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
@@ -1384,6 +1386,9 @@ private fun HomeDashboardWidgets(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
     }
+    val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+        alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * componentAlpha).coerceIn(0f, 1f)
+    )
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val dashboardGap = 12.dp
@@ -1482,7 +1487,7 @@ private fun HomeDashboardWidgets(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     cornerRadius = 22.dp,
                     colors = MiuixCardDefaults.defaultColors(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = cardBgColor,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
@@ -1506,7 +1511,7 @@ private fun HomeDashboardWidgets(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     cornerRadius = 22.dp,
                     colors = MiuixCardDefaults.defaultColors(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = cardBgColor,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
@@ -1733,10 +1738,16 @@ private fun GroupChipItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val chipBg = if (isSelected) {
+    val componentAlpha = LocalComponentAlpha.current
+    val rawChipBg = if (isSelected) {
         colorArgb?.let { colorFromArgb(it) } ?: MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val chipBg = if (isSelected) {
+        rawChipBg.copy(alpha = (rawChipBg.alpha * componentAlpha).coerceIn(0.25f, 1f))
+    } else {
+        rawChipBg.copy(alpha = (rawChipBg.alpha * componentAlpha).coerceIn(0f, 1f))
     }
 
     val chipContentColor = if (isSelected) {
@@ -1988,9 +1999,9 @@ private fun TimelineContent(
 ) {
     val dayStart = remember(day) { TimeUtils.startOfDay(day) }
     val dayEnd = remember(day) { TimeUtils.startOfDay(day.plusDays(1)) }
-    val hasRunningRecords = contentActive && records.any { it.endTime == null }
-    val now = produceClock(enabled = hasRunningRecords)
     val showNowLine = contentActive && day == LocalDate.now()
+    val hasRunningRecords = contentActive && records.any { it.endTime == null }
+    val now = produceClock(enabled = showNowLine || hasRunningRecords)
     val calculationKey = remember(records, dayStart, dayEnd, notedRecordIds) { Any() }
     var calculation by remember { mutableStateOf<Pair<Any, List<TimelineRecordUi>>?>(null) }
 
@@ -2759,6 +2770,7 @@ private fun AppearanceSettings(
             ThemeSwitchPreference(
                 title = "液态玻璃",
                 summary = if (settings.floatingBottomBarEnabled) "为悬浮底栏启用实时背景模糊和流体高光" else "请先开启悬浮底栏",
+                warning = if (settings.floatingBottomBarEnabled && settings.liquidGlassBottomBarEnabled) "⚠️ 开启高阶流体高光与实时模糊可能增加 GPU 渲染开销与耗电量" else null,
                 icon = Icons.Rounded.WaterDrop,
                 checked = settings.liquidGlassBottomBarEnabled,
                 enabled = settings.floatingBottomBarEnabled,
@@ -2782,8 +2794,10 @@ private fun AppearanceSettings(
                 FontScaleMode.ExtraLarge
             )
             val selectedFontIndex = fontStops.indexOf(settings.fontScaleMode).coerceAtLeast(3)
+            var localFontIndex by remember(settings.fontScaleMode) { mutableFloatStateOf(selectedFontIndex.toFloat()) }
+            val currentFontMode = fontStops[localFontIndex.roundToInt().coerceIn(fontStops.indices)]
             Text(
-                text = when (settings.fontScaleMode) {
+                text = when (currentFontMode) {
                     FontScaleMode.ExtraSmall -> "更小"
                     FontScaleMode.Small -> "小"
                     FontScaleMode.Compact -> "较小"
@@ -2798,8 +2812,9 @@ private fun AppearanceSettings(
                 style = MaterialTheme.typography.labelLarge
             )
             AdaptiveSlider(
-                value = selectedFontIndex.toFloat(),
-                onValueChange = { value -> viewModel.setFontScaleMode(fontStops[value.roundToInt().coerceIn(fontStops.indices)]) },
+                value = localFontIndex,
+                onValueChange = { localFontIndex = it },
+                onValueChangeFinished = { viewModel.setFontScaleMode(fontStops[localFontIndex.roundToInt().coerceIn(fontStops.indices)]) },
                 valueRange = 0f..6f,
                 steps = 5,
                 modifier = Modifier.fillMaxWidth()
@@ -2827,30 +2842,51 @@ private fun AppearanceSettings(
             }
         }
         SectionCard(title = "背景与组件效果") {
-            val transparency = (1f - settings.componentAlpha).coerceIn(0f, 1f)
-            Text("组件透明度：${(transparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var localTransparency by remember(settings.componentAlpha) { mutableFloatStateOf((1f - settings.componentAlpha).coerceIn(0f, 1f)) }
+            Text("组件透明度：${(localTransparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             AdaptiveSlider(
-                value = transparency,
-                onValueChange = { viewModel.setComponentAlpha(1f - it) },
+                value = localTransparency,
+                onValueChange = { localTransparency = it },
+                onValueChangeFinished = { viewModel.setComponentAlpha(1f - localTransparency) },
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (localTransparency > 0.4f) {
+                Text(
+                    text = "⚠️ 较高透明度需要更多的 GPU 离屏纹理渲染支持，可能增加耗电",
+                    color = Color(0xFFFFA726),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             ThemeSwitchPreference(
                 title = "背景玻璃效果",
                 summary = "模糊自定义壁纸并降低主要卡片的不透明度",
+                warning = if (settings.glassEffectEnabled) "⚠️ 开启实时壁纸模糊与玻璃材质特效可能带来微卡风险与增加电池消耗" else null,
                 icon = Icons.Rounded.BlurOn,
                 checked = settings.glassEffectEnabled,
                 onCheckedChange = viewModel::setGlassEffectEnabled
             )
-            val blurPercent = (settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)
-            Text("模糊度：${(blurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var localBlurPercent by remember(settings.wallpaperBlurRadius) { mutableFloatStateOf((settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)) }
+            Text("模糊度：${(localBlurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             AdaptiveSlider(
-                value = blurPercent,
-                onValueChange = { viewModel.setWallpaperBlurRadius(it * 40f) },
+                value = localBlurPercent,
+                onValueChange = { localBlurPercent = it },
+                onValueChangeFinished = { viewModel.setWallpaperBlurRadius(localBlurPercent * 40f) },
                 valueRange = 0f..1f,
                 enabled = settings.glassEffectEnabled,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (settings.glassEffectEnabled && localBlurPercent > 0.25f) {
+                Text(
+                    text = "⚠️ 较高的高斯模糊半径需要更多的 GPU 算力支持，可能导致微卡与增加耗电",
+                    color = Color(0xFFFFA726),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             Text("开启后使用半透明界面和背景模糊效果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -3037,12 +3073,14 @@ private fun AdaptiveSlider(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
-    steps: Int = 0
+    steps: Int = 0,
+    onValueChangeFinished: (() -> Unit)? = null
 ) {
     if (LocalUiStyle.current == UiStyle.Miuix) {
         MiuixSlider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             modifier = modifier,
             enabled = enabled,
             valueRange = valueRange,
@@ -3053,6 +3091,7 @@ private fun AdaptiveSlider(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             modifier = modifier,
             enabled = enabled,
             valueRange = valueRange,
@@ -3096,6 +3135,7 @@ private fun ThemeSwitchPreference(
     icon: ImageVector,
     checked: Boolean,
     enabled: Boolean = true,
+    warning: String? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -3109,6 +3149,15 @@ private fun ThemeSwitchPreference(
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            if (!warning.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = warning,
+                    color = Color(0xFFFFA726),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
@@ -3224,13 +3273,6 @@ private fun DataSettings(
 }
 
 @Composable
-private fun SettingSwitchLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f))
-        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-@Composable
 private fun WallpaperBackground(
     settings: AppSettings,
     glassEffectEnabled: Boolean = false,
@@ -3297,7 +3339,7 @@ private fun rememberWallpaperBitmap(uriString: String?): ImageBitmap? {
         if (!uriString.isNullOrBlank()) {
             value = withContext(Dispatchers.IO) {
                 runCatching {
-                    val uri = Uri.parse(uriString)
+                    val uri = uriString.toUri()
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         BitmapFactory.decodeStream(input, null, bounds)
@@ -4617,17 +4659,20 @@ private fun buildTimelineItems(
     return positionTimelineRecords(clipped)
 }
 
+private fun timelineMinute(timestamp: Long): Long = timestamp / 60_000L
+
 private fun timelineOverlapClusters(items: List<TimelineRecordUi>): List<List<TimelineRecordUi>> {
     val sorted = items.sortedBy { it.startTime }
     val clusters = mutableListOf<List<TimelineRecordUi>>()
     var index = 0
     while (index < sorted.size) {
         val cluster = mutableListOf<TimelineRecordUi>()
-        var clusterEnd = sorted[index].endTime
-        while (index < sorted.size && (cluster.isEmpty() || sorted[index].startTime < clusterEnd)) {
+        var clusterEndMinute = timelineMinute(sorted[index].endTime)
+        while (index < sorted.size && (cluster.isEmpty() || timelineMinute(sorted[index].startTime) < clusterEndMinute)) {
             val item = sorted[index]
             cluster += item
-            if (item.endTime > clusterEnd) clusterEnd = item.endTime
+            val itemEndMinute = timelineMinute(item.endTime)
+            if (itemEndMinute > clusterEndMinute) clusterEndMinute = itemEndMinute
             index++
         }
         clusters += cluster
@@ -4640,7 +4685,8 @@ private fun positionTimelineRecords(items: List<TimelineRecordUi>): List<Timelin
     timelineOverlapClusters(items).forEach { cluster ->
         val laneEnds = mutableListOf<Long>()
         val positioned = cluster.map { item ->
-            val lane = laneEnds.indexOfFirst { it <= item.startTime }.let { if (it >= 0) it else laneEnds.size }
+            val itemStartMinute = timelineMinute(item.startTime)
+            val lane = laneEnds.indexOfFirst { timelineMinute(it) <= itemStartMinute }.let { if (it >= 0) it else laneEnds.size }
             if (lane == laneEnds.size) laneEnds += item.endTime else laneEnds[lane] = item.endTime
             item.copy(lane = lane)
         }
@@ -4724,7 +4770,7 @@ private fun Modifier.timelineTransformGestures(
                     singleTravelY = 0f
                 } else {
                     val pan = change.position - change.previousPosition
-                    singleVelocityTracker?.addPosition(change.uptimeMillis, change.position)
+                    singleVelocityTracker.addPosition(change.uptimeMillis, change.position)
                     singleTravelY += abs(pan.y)
                     if (pan.x.isFinite() && pan.y.isFinite() && pan != Offset.Zero) {
                         onTransform.value(change.previousPosition, pan, 1f)
@@ -5055,45 +5101,6 @@ private fun TimelineRecordBlock(
 }
 
 @Composable
-private fun TimelineBlockCard(
-    item: TimelineRecordUi,
-    settings: AppSettings,
-    now: Long,
-    onClick: () -> Unit
-) {
-    val duration = Duration.ofMillis(item.endTime - item.startTime)
-    val durationMinutes = duration.toMinutes().toInt().coerceAtLeast(1)
-    val blockHeight = (durationMinutes * 2).coerceIn(72, 220).dp
-    val color = colorFromArgb(item.record.groupColorArgbSnapshot)
-    Card(
-        modifier = Modifier.fillMaxWidth().height(blockHeight),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.14f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.4f)),
-        onClick = onClick
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(item.record.eventNameSnapshot, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (item.record.endTime == null) {
-                    "${TimeUtils.formatClock(item.startTime, settings.showDateInClock, settings.use24Hour)} → 进行中"
-                } else {
-                    "${TimeUtils.formatClock(item.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(item.endTime, settings.showDateInClock, settings.use24Hour)}"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                "分组：${item.record.groupNameSnapshot} · ${if (item.record.endTime == null) formatRunning(item.record.startTime, now) else formatDuration(duration)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
 internal fun SimpleDialog(
     title: String,
     onDismiss: () -> Unit,
@@ -5210,14 +5217,6 @@ private fun formatRunningClock(startTime: Long, now: Long): String {
         "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
     } else {
         "$minutes:${seconds.toString().padStart(2, '0')}"
-    }
-}
-
-private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): String {
-    return if (record.endTime == null) {
-        "进行中 · ${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} · ${formatRunning(record.startTime)}"
-    } else {
-        "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
 
