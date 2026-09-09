@@ -1369,11 +1369,13 @@ private fun HomeDashboardWidgets(
 ) {
     val isWorking = running.isNotEmpty()
     val haptics = LocalHapticFeedback.current
-    val statusCardColor = if (isWorking) {
+    val componentAlpha = LocalComponentAlpha.current
+    val rawStatusColor = if (isWorking) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val statusCardColor = rawStatusColor.copy(alpha = (rawStatusColor.alpha * componentAlpha).coerceIn(0f, 1f))
     val statusContentColor = if (isWorking) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
@@ -1384,6 +1386,9 @@ private fun HomeDashboardWidgets(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
     }
+    val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+        alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * componentAlpha).coerceIn(0f, 1f)
+    )
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val dashboardGap = 12.dp
@@ -1482,7 +1487,7 @@ private fun HomeDashboardWidgets(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     cornerRadius = 22.dp,
                     colors = MiuixCardDefaults.defaultColors(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = cardBgColor,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
@@ -1506,7 +1511,7 @@ private fun HomeDashboardWidgets(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     cornerRadius = 22.dp,
                     colors = MiuixCardDefaults.defaultColors(
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = cardBgColor,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
@@ -1733,10 +1738,16 @@ private fun GroupChipItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val chipBg = if (isSelected) {
+    val componentAlpha = LocalComponentAlpha.current
+    val rawChipBg = if (isSelected) {
         colorArgb?.let { colorFromArgb(it) } ?: MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val chipBg = if (isSelected) {
+        rawChipBg.copy(alpha = (rawChipBg.alpha * componentAlpha).coerceIn(0.25f, 1f))
+    } else {
+        rawChipBg.copy(alpha = (rawChipBg.alpha * componentAlpha).coerceIn(0f, 1f))
     }
 
     val chipContentColor = if (isSelected) {

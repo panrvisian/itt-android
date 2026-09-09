@@ -143,10 +143,17 @@ fun MiuixCalendarHeader(
         CalendarHeaderMode.Semester -> "当前学期"
     }
 
+    val componentAlpha = LocalComponentAlpha.current
+    val headerBg = if (LocalGlassEffect.current) {
+        Color.Transparent
+    } else {
+        MaterialTheme.colorScheme.background.copy(alpha = componentAlpha)
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(headerBg)
             .animateContentSize(animationSpec = spring(dampingRatio = 0.9f, stiffness = 500f))
             .padding(horizontal = 20.dp)
     ) {

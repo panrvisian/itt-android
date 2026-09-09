@@ -182,7 +182,12 @@ internal fun MiuixLiquidGlassNavigationBar(
     val accentColor = MiuixTheme.colorScheme.primary
     val tabContentColor = MiuixTheme.colorScheme.onSurface
     val surfaceContainer = MiuixTheme.colorScheme.surfaceContainer
-    val containerColor = if (isBlurActive) surfaceContainer.copy(alpha = 0.4f) else surfaceContainer
+    val componentAlpha = LocalComponentAlpha.current
+    val containerColor = if (isBlurActive) {
+        surfaceContainer.copy(alpha = (0.4f * componentAlpha).coerceIn(0f, 1f))
+    } else {
+        surfaceContainer.copy(alpha = componentAlpha)
+    }
 
     val tabsBackdrop = rememberLayerBackdrop()
     val density = LocalDensity.current
