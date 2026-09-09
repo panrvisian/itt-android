@@ -454,6 +454,8 @@ fun AppRoot(
             preloadedPageRadius = radius
             withFrameNanos { }
         }
+        // Allow GPU HWUI/Skia pipeline to pre-warm AGSL shaders and allocate offscreen texture layers during Splash
+        withFrameNanos { }
         withFrameNanos { }
         startupPreloadComplete = true
         startupReadyCallback()
@@ -666,6 +668,7 @@ fun AppRoot(
                                 .nestedScroll(boundaryNestedScrollConnection)
                                 .graphicsLayer {
                                     translationX = animatedBoundaryOffset
+                                    compositingStrategy = CompositingStrategy.Offscreen
                                 }
                         ) { page ->
                             val tab = tabs[page]
