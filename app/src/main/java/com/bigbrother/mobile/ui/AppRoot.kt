@@ -650,9 +650,9 @@ fun AppRoot(
                     )
                     CompositionLocalProvider(
                         LocalComponentAlpha provides settings.componentAlpha,
-                        LocalGlassEffect provides settings.glassEffectEnabled,
+                        LocalGlassEffect provides (settings.glassEffectEnabled || useLiquidGlassBottomBar),
                         LocalMainBottomBarPadding provides mainBottomPadding,
-                        LocalCalendarButtonBackdrop provides calendarButtonBackdrop
+                        LocalCalendarButtonBackdrop provides (if (settings.glassEffectEnabled || useLiquidGlassBottomBar) calendarButtonBackdrop else null)
                     ) {
                         HorizontalPager(
                             state = pagerState,
