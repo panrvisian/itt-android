@@ -4617,17 +4617,20 @@ private fun buildTimelineItems(
     return positionTimelineRecords(clipped)
 }
 
+private fun timelineMinute(timestamp: Long): Long = timestamp / 60_000L
+
 private fun timelineOverlapClusters(items: List<TimelineRecordUi>): List<List<TimelineRecordUi>> {
     val sorted = items.sortedBy { it.startTime }
     val clusters = mutableListOf<List<TimelineRecordUi>>()
     var index = 0
     while (index < sorted.size) {
         val cluster = mutableListOf<TimelineRecordUi>()
-        var clusterEnd = sorted[index].endTime
-        while (index < sorted.size && (cluster.isEmpty() || sorted[index].startTime < clusterEnd)) {
+        var clusterEndMinute = timelineMinute(sorted[index].endTime)
+        while (index < sorted.size && (cluster.isEmpty() || timelineMinute(sorted[index].startTime) < clusterEndMinute)) {
             val item = sorted[index]
             cluster += item
-            if (item.endTime > clusterEnd) clusterEnd = item.endTime
+            val itemEndMinute = timelineMinute(item.endTime)
+            if (itemEndMinute > clusterEndMinute) clusterEndMinute = itemEndMinute
             index++
         }
         clusters += cluster
@@ -4640,7 +4643,8 @@ private fun positionTimelineRecords(items: List<TimelineRecordUi>): List<Timelin
     timelineOverlapClusters(items).forEach { cluster ->
         val laneEnds = mutableListOf<Long>()
         val positioned = cluster.map { item ->
-            val lane = laneEnds.indexOfFirst { it <= item.startTime }.let { if (it >= 0) it else laneEnds.size }
+            val itemStartMinute = timelineMinute(item.startTime)
+            val lane = laneEnds.indexOfFirst { timelineMinute(it) <= itemStartMinute }.let { if (it >= 0) it else laneEnds.size }
             if (lane == laneEnds.size) laneEnds += item.endTime else laneEnds[lane] = item.endTime
             item.copy(lane = lane)
         }
