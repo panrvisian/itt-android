@@ -1985,9 +1985,9 @@ private fun TimelineContent(
 ) {
     val dayStart = remember(day) { TimeUtils.startOfDay(day) }
     val dayEnd = remember(day) { TimeUtils.startOfDay(day.plusDays(1)) }
-    val hasRunningRecords = contentActive && records.any { it.endTime == null }
-    val now = produceClock(enabled = hasRunningRecords)
     val showNowLine = contentActive && day == LocalDate.now()
+    val hasRunningRecords = contentActive && records.any { it.endTime == null }
+    val now = produceClock(enabled = showNowLine || hasRunningRecords)
     val calculationKey = remember(records, dayStart, dayEnd, notedRecordIds) { Any() }
     var calculation by remember { mutableStateOf<Pair<Any, List<TimelineRecordUi>>?>(null) }
 
