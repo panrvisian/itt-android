@@ -1688,6 +1688,7 @@ private fun HorizontalGroupSelectorBar(
         Row(
             modifier = Modifier
                 .weight(1f)
+                .stopParentHorizontalScrollAtBounds()
                 .horizontalScroll(scrollState),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -4656,6 +4657,14 @@ private val stopParentScrollAtBoundsConnection = object : NestedScrollConnection
 
 private fun Modifier.stopParentScrollAtBounds(enabled: Boolean = true): Modifier =
     if (enabled) nestedScroll(stopParentScrollAtBoundsConnection) else this
+
+private val stopParentHorizontalScrollAtBoundsConnection = object : NestedScrollConnection {
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset = Offset(available.x, 0f)
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = Velocity(available.x, 0f)
+}
+
+private fun Modifier.stopParentHorizontalScrollAtBounds(enabled: Boolean = true): Modifier =
+    if (enabled) nestedScroll(stopParentHorizontalScrollAtBoundsConnection) else this
 
 private const val TIMELINE_MIN_VERTICAL_SCALE = 0.7f
 private const val TIMELINE_MAX_VERTICAL_SCALE = 36f
