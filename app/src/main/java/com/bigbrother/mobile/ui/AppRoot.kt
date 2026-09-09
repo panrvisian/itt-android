@@ -3,6 +3,7 @@
 package com.bigbrother.mobile.ui
 
 import android.net.Uri
+import androidx.core.net.toUri
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
@@ -12,15 +13,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -351,7 +349,6 @@ fun AppRoot(
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val statsRange by viewModel.statsRange.collectAsStateWithLifecycle()
     val statsDate by viewModel.statsDate.collectAsStateWithLifecycle()
-    val timelineDate by viewModel.timelineDate.collectAsStateWithLifecycle()
     val notesDate by viewModel.notesDate.collectAsStateWithLifecycle()
     val homeContentReady by viewModel.homeContentReady.collectAsStateWithLifecycle()
 
@@ -363,7 +360,7 @@ fun AppRoot(
     var showSemesterStartDialog by rememberSaveable { mutableStateOf(false) }
     var showWallpaperEditor by rememberSaveable { mutableStateOf(false) }
 
-    val activeSettingsPage = SettingsPage.values().firstOrNull { it.name == activeSettingsPageName } ?: SettingsPage.Main
+    val activeSettingsPage = SettingsPage.entries.firstOrNull { it.name == activeSettingsPageName } ?: SettingsPage.Main
     val isSettingsSubpage = activeSettingsPage != SettingsPage.Main
 
     LaunchedEffect(selectedTab) {
@@ -572,7 +569,7 @@ fun AppRoot(
 
                 if (isAtLeftBoundary || isAtRightBoundary || boundaryOverscrollOffset != 0f) {
                     val maxBound = 1080f
-                    val ratio = (kotlin.math.abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
+                    val ratio = (abs(boundaryOverscrollOffset) / maxBound).coerceIn(0f, 1f)
                     val factor = (1f - Math.pow(ratio.toDouble(), 0.75).toFloat()) * 0.5f
                     val delta = available.x * factor.coerceAtLeast(0.05f)
 
@@ -3224,13 +3221,6 @@ private fun DataSettings(
 }
 
 @Composable
-private fun SettingSwitchLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f))
-        AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-@Composable
 private fun WallpaperBackground(
     settings: AppSettings,
     glassEffectEnabled: Boolean = false,
@@ -3297,7 +3287,7 @@ private fun rememberWallpaperBitmap(uriString: String?): ImageBitmap? {
         if (!uriString.isNullOrBlank()) {
             value = withContext(Dispatchers.IO) {
                 runCatching {
-                    val uri = Uri.parse(uriString)
+                    val uri = uriString.toUri()
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         BitmapFactory.decodeStream(input, null, bounds)
@@ -4728,7 +4718,7 @@ private fun Modifier.timelineTransformGestures(
                     singleTravelY = 0f
                 } else {
                     val pan = change.position - change.previousPosition
-                    singleVelocityTracker?.addPosition(change.uptimeMillis, change.position)
+                    singleVelocityTracker.addPosition(change.uptimeMillis, change.position)
                     singleTravelY += abs(pan.y)
                     if (pan.x.isFinite() && pan.y.isFinite() && pan != Offset.Zero) {
                         onTransform.value(change.previousPosition, pan, 1f)
@@ -5059,45 +5049,6 @@ private fun TimelineRecordBlock(
 }
 
 @Composable
-private fun TimelineBlockCard(
-    item: TimelineRecordUi,
-    settings: AppSettings,
-    now: Long,
-    onClick: () -> Unit
-) {
-    val duration = Duration.ofMillis(item.endTime - item.startTime)
-    val durationMinutes = duration.toMinutes().toInt().coerceAtLeast(1)
-    val blockHeight = (durationMinutes * 2).coerceIn(72, 220).dp
-    val color = colorFromArgb(item.record.groupColorArgbSnapshot)
-    Card(
-        modifier = Modifier.fillMaxWidth().height(blockHeight),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.14f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.4f)),
-        onClick = onClick
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(item.record.eventNameSnapshot, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (item.record.endTime == null) {
-                    "${TimeUtils.formatClock(item.startTime, settings.showDateInClock, settings.use24Hour)} → 进行中"
-                } else {
-                    "${TimeUtils.formatClock(item.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(item.endTime, settings.showDateInClock, settings.use24Hour)}"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                "分组：${item.record.groupNameSnapshot} · ${if (item.record.endTime == null) formatRunning(item.record.startTime, now) else formatDuration(duration)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
 internal fun SimpleDialog(
     title: String,
     onDismiss: () -> Unit,
@@ -5214,14 +5165,6 @@ private fun formatRunningClock(startTime: Long, now: Long): String {
         "$hours:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
     } else {
         "$minutes:${seconds.toString().padStart(2, '0')}"
-    }
-}
-
-private fun timelineSubtitle(record: RecordEntity, settings: AppSettings): String {
-    return if (record.endTime == null) {
-        "进行中 · ${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} · ${formatRunning(record.startTime)}"
-    } else {
-        "${TimeUtils.formatClock(record.startTime, settings.showDateInClock, settings.use24Hour)} → ${TimeUtils.formatClock(record.endTime, settings.showDateInClock, settings.use24Hour)}"
     }
 }
 
