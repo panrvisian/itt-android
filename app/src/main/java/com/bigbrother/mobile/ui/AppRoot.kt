@@ -2783,8 +2783,10 @@ private fun AppearanceSettings(
                 FontScaleMode.ExtraLarge
             )
             val selectedFontIndex = fontStops.indexOf(settings.fontScaleMode).coerceAtLeast(3)
+            var localFontIndex by remember(settings.fontScaleMode) { mutableFloatStateOf(selectedFontIndex.toFloat()) }
+            val currentFontMode = fontStops[localFontIndex.roundToInt().coerceIn(fontStops.indices)]
             Text(
-                text = when (settings.fontScaleMode) {
+                text = when (currentFontMode) {
                     FontScaleMode.ExtraSmall -> "更小"
                     FontScaleMode.Small -> "小"
                     FontScaleMode.Compact -> "较小"
@@ -2799,8 +2801,9 @@ private fun AppearanceSettings(
                 style = MaterialTheme.typography.labelLarge
             )
             AdaptiveSlider(
-                value = selectedFontIndex.toFloat(),
-                onValueChange = { value -> viewModel.setFontScaleMode(fontStops[value.roundToInt().coerceIn(fontStops.indices)]) },
+                value = localFontIndex,
+                onValueChange = { localFontIndex = it },
+                onValueChangeFinished = { viewModel.setFontScaleMode(fontStops[localFontIndex.roundToInt().coerceIn(fontStops.indices)]) },
                 valueRange = 0f..6f,
                 steps = 5,
                 modifier = Modifier.fillMaxWidth()
@@ -2828,15 +2831,16 @@ private fun AppearanceSettings(
             }
         }
         SectionCard(title = "背景与组件效果") {
-            val transparency = (1f - settings.componentAlpha).coerceIn(0f, 1f)
-            Text("组件透明度：${(transparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var localTransparency by remember(settings.componentAlpha) { mutableFloatStateOf((1f - settings.componentAlpha).coerceIn(0f, 1f)) }
+            Text("组件透明度：${(localTransparency * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             AdaptiveSlider(
-                value = transparency,
-                onValueChange = { viewModel.setComponentAlpha(1f - it) },
+                value = localTransparency,
+                onValueChange = { localTransparency = it },
+                onValueChangeFinished = { viewModel.setComponentAlpha(1f - localTransparency) },
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
-            if (transparency > 0.4f) {
+            if (localTransparency > 0.4f) {
                 Text(
                     text = "⚠️ 较高透明度需要更多的 GPU 离屏纹理渲染支持，可能增加耗电",
                     color = Color(0xFFFFA726),
@@ -2853,16 +2857,17 @@ private fun AppearanceSettings(
                 checked = settings.glassEffectEnabled,
                 onCheckedChange = viewModel::setGlassEffectEnabled
             )
-            val blurPercent = (settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)
-            Text("模糊度：${(blurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var localBlurPercent by remember(settings.wallpaperBlurRadius) { mutableFloatStateOf((settings.wallpaperBlurRadius / 40f).coerceIn(0f, 1f)) }
+            Text("模糊度：${(localBlurPercent * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             AdaptiveSlider(
-                value = blurPercent,
-                onValueChange = { viewModel.setWallpaperBlurRadius(it * 40f) },
+                value = localBlurPercent,
+                onValueChange = { localBlurPercent = it },
+                onValueChangeFinished = { viewModel.setWallpaperBlurRadius(localBlurPercent * 40f) },
                 valueRange = 0f..1f,
                 enabled = settings.glassEffectEnabled,
                 modifier = Modifier.fillMaxWidth()
             )
-            if (settings.glassEffectEnabled && settings.wallpaperBlurRadius > 10f) {
+            if (settings.glassEffectEnabled && localBlurPercent > 0.25f) {
                 Text(
                     text = "⚠️ 较高的高斯模糊半径需要更多的 GPU 算力支持，可能导致微卡与增加耗电",
                     color = Color(0xFFFFA726),
@@ -3057,12 +3062,14 @@ private fun AdaptiveSlider(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
-    steps: Int = 0
+    steps: Int = 0,
+    onValueChangeFinished: (() -> Unit)? = null
 ) {
     if (LocalUiStyle.current == UiStyle.Miuix) {
         MiuixSlider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             modifier = modifier,
             enabled = enabled,
             valueRange = valueRange,
@@ -3073,6 +3080,7 @@ private fun AdaptiveSlider(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             modifier = modifier,
             enabled = enabled,
             valueRange = valueRange,
