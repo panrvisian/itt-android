@@ -1,13 +1,15 @@
 package com.bigbrother.mobile.ui
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +19,11 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,8 +36,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
@@ -62,6 +68,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 enum class CalendarHeaderMode {
@@ -74,6 +81,10 @@ enum class CalendarHeaderMode {
 private const val CALENDAR_PAGER_COUNT = 2401
 private const val CALENDAR_PAGER_CENTER = CALENDAR_PAGER_COUNT / 2
 private val weekLabels = listOf("日", "一", "二", "三", "四", "五", "六")
+private val compactWeekHeight = 66.dp
+private val monthWeekdayHeaderHeight = 30.dp
+private val monthWeekHeight = 44.dp
+private val monthCalendarHeight = 294.dp
 
 /**
  * Fixed MiuiX calendar header shared by timeline, notes and statistics.
@@ -142,12 +153,16 @@ fun MiuixCalendarHeader(
         CalendarHeaderMode.Month -> "本月"
         CalendarHeaderMode.Semester -> "当前学期"
     }
+    val expansionProgress by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        label = "calendarExpansionProgress"
+    )
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .animateContentSize(animationSpec = spring(dampingRatio = 0.9f, stiffness = 500f))
             .padding(horizontal = 20.dp)
     ) {
         Box(
@@ -220,8 +235,8 @@ fun MiuixCalendarHeader(
             )
         }
 
-        when {
-            mode == CalendarHeaderMode.Semester && expanded -> {
+        if (mode == CalendarHeaderMode.Semester) {
+            if (expanded) {
                 NumberPicker(
                     value = 0,
                     onValueChange = {},
@@ -231,42 +246,18 @@ fun MiuixCalendarHeader(
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
-            expanded -> {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(294.dp)
-                ) { page ->
-                    val month = YearMonth.from(selectedDate)
-                        .plusMonths((page - CALENDAR_PAGER_CENTER).toLong())
-                    MonthCalendar(
-                        month = month,
-                        selectedDate = selectedDate,
-                        onDateSelected = {
-                            onDateSelected(it)
-                            onExpandedChange(false)
-                        }
-                    )
+        } else {
+            AnimatedCalendarPager(
+                pagerState = pagerState,
+                selectedDate = selectedDate,
+                mode = mode,
+                expanded = expanded,
+                expansionProgress = expansionProgress,
+                onDateSelected = {
+                    onDateSelected(it)
+                    if (expanded) onExpandedChange(false)
                 }
-            }
-            mode == CalendarHeaderMode.Day || mode == CalendarHeaderMode.Week -> {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(66.dp)
-                ) { page ->
-                    val weekStart = startOfSundayWeek(selectedDate)
-                        .plusWeeks((page - CALENDAR_PAGER_CENTER).toLong())
-                    WeekCalendar(
-                        weekStart = weekStart,
-                        selectedDate = selectedDate,
-                        emphasizeSelectedDay = mode == CalendarHeaderMode.Day,
-                        onDateSelected = onDateSelected
-                    )
-                }
-            }
+            )
         }
 
         CalendarExpandHandle(
@@ -422,35 +413,134 @@ private fun WeekCalendar(
 }
 
 @Composable
-private fun MonthCalendar(
+private fun AnimatedCalendarPager(
+    pagerState: PagerState,
+    selectedDate: LocalDate,
+    mode: CalendarHeaderMode,
+    expanded: Boolean,
+    expansionProgress: Float,
+    onDateSelected: (LocalDate) -> Unit
+) {
+    val hasCompactWeek = mode == CalendarHeaderMode.Day || mode == CalendarHeaderMode.Week
+    val collapsedHeight = if (hasCompactWeek) compactWeekHeight else 0.dp
+    val animatedHeight = collapsedHeight + (monthCalendarHeight - collapsedHeight) * expansionProgress
+    val showCompactPager = !expanded && expansionProgress <= 0.001f && hasCompactWeek
+
+    HorizontalPager(
+        state = pagerState,
+        userScrollEnabled = showCompactPager || (expanded && expansionProgress >= 0.999f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(animatedHeight)
+            .clipToBounds()
+    ) { page ->
+        val pageOffset = (page - CALENDAR_PAGER_CENTER).toLong()
+        if (showCompactPager) {
+            WeekCalendar(
+                weekStart = startOfSundayWeek(selectedDate).plusWeeks(pageOffset),
+                selectedDate = selectedDate,
+                emphasizeSelectedDay = mode == CalendarHeaderMode.Day,
+                onDateSelected = onDateSelected
+            )
+        } else {
+            AnimatedMonthCalendar(
+                month = YearMonth.from(selectedDate).plusMonths(pageOffset),
+                selectedDate = selectedDate,
+                animateSelectedWeek = hasCompactWeek && page == CALENDAR_PAGER_CENTER,
+                emphasizeSelectedDay = mode == CalendarHeaderMode.Day,
+                expansionProgress = expansionProgress,
+                onDateSelected = onDateSelected
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimatedMonthCalendar(
     month: YearMonth,
     selectedDate: LocalDate,
+    animateSelectedWeek: Boolean,
+    emphasizeSelectedDay: Boolean,
+    expansionProgress: Float,
     onDateSelected: (LocalDate) -> Unit
 ) {
     val firstVisibleDate = startOfSundayWeek(month.atDay(1))
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+    val selectedWeekStart = startOfSundayWeek(selectedDate)
+    val movingRowIndex = if (animateSelectedWeek && YearMonth.from(selectedDate) == month) {
+        (ChronoUnit.DAYS.between(firstVisibleDate, selectedWeekStart) / 7L)
+            .toInt()
+            .takeIf { it in 0..5 }
+    } else {
+        null
+    }
+    val fadeAlpha = ((expansionProgress - 0.12f) / 0.88f).coerceIn(0f, 1f)
+    val datesEnabled = expansionProgress >= 0.999f
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(monthCalendarHeight)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(monthWeekdayHeaderHeight)
+                .graphicsLayer { alpha = fadeAlpha },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             weekLabels.forEach { label ->
                 androidx.compose.material3.Text(
                     text = label,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 6.dp),
+                    modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
+
         repeat(6) { row ->
-            Row(modifier = Modifier.fillMaxWidth()) {
+            if (row != movingRowIndex) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(monthWeekHeight)
+                        .offset(y = monthWeekdayHeaderHeight + monthWeekHeight * row.toFloat())
+                        .graphicsLayer { alpha = fadeAlpha }
+                ) {
+                    repeat(7) { column ->
+                        val date = firstVisibleDate.plusDays((row * 7L) + column)
+                        CalendarDayCell(
+                            weekday = null,
+                            date = date,
+                            selected = date == selectedDate,
+                            muted = YearMonth.from(date) != month,
+                            enabled = datesEnabled,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onDateSelected(date) }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (movingRowIndex != null) {
+            val targetOffset = monthWeekdayHeaderHeight + monthWeekHeight * movingRowIndex.toFloat()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(compactWeekHeight)
+                    .offset(y = targetOffset * expansionProgress)
+            ) {
                 repeat(7) { column ->
-                    val date = firstVisibleDate.plusDays((row * 7L) + column)
-                    CalendarDayCell(
-                        weekday = null,
+                    val date = selectedWeekStart.plusDays(column.toLong())
+                    AnimatedWeekDayCell(
+                        weekday = weekLabels[column],
                         date = date,
-                        selected = date == selectedDate,
-                        muted = YearMonth.from(date) != month,
+                        selectedDate = selectedDate,
+                        month = month,
+                        emphasizeSelectedDay = emphasizeSelectedDay,
+                        expansionProgress = expansionProgress,
                         modifier = Modifier.weight(1f),
                         onClick = { onDateSelected(date) }
                     )
@@ -461,11 +551,79 @@ private fun MonthCalendar(
 }
 
 @Composable
+private fun AnimatedWeekDayCell(
+    weekday: String,
+    date: LocalDate,
+    selectedDate: LocalDate,
+    month: YearMonth,
+    emphasizeSelectedDay: Boolean,
+    expansionProgress: Float,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val accent = MiuixTheme.colorScheme.primary
+    val selectedText = if (accent.luminance() > 0.55f) Color.Black else Color.White
+    val selectedAmount = if (date == selectedDate) {
+        if (emphasizeSelectedDay) 1f else expansionProgress
+    } else {
+        0f
+    }
+    val expandedTextColor = if (YearMonth.from(date) != month) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    } else {
+        MaterialTheme.colorScheme.onBackground
+    }
+    val unselectedTextColor = lerpColor(
+        MaterialTheme.colorScheme.onBackground,
+        expandedTextColor,
+        expansionProgress
+    )
+    val dateTop = 22.dp + (3.dp - 22.dp) * expansionProgress
+
+    Box(
+        modifier = modifier
+            .height(compactWeekHeight)
+            .semantics {
+                role = Role.Button
+                contentDescription = formatFullDate(date)
+            }
+            .clickable(onClick = onClick)
+    ) {
+        androidx.compose.material3.Text(
+            text = weekday,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = 3.dp)
+                .graphicsLayer { alpha = 1f - expansionProgress },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = dateTop)
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accent.copy(alpha = selectedAmount)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material3.Text(
+                text = date.dayOfMonth.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selectedAmount >= 0.5f) FontWeight.Bold else FontWeight.Normal,
+                color = lerpColor(unselectedTextColor, selectedText, selectedAmount)
+            )
+        }
+    }
+}
+
+@Composable
 private fun CalendarDayCell(
     weekday: String?,
     date: LocalDate,
     selected: Boolean,
     muted: Boolean,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -477,7 +635,7 @@ private fun CalendarDayCell(
                 role = Role.Button
                 contentDescription = formatFullDate(date)
             }
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -512,6 +670,7 @@ private fun CalendarDayCell(
 
 @Composable
 private fun CalendarExpandHandle(expanded: Boolean, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -520,7 +679,12 @@ private fun CalendarExpandHandle(expanded: Boolean, onClick: () -> Unit) {
                 role = Role.Button
                 contentDescription = if (expanded) "收起日历" else "展开日历"
             }
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            ),
         contentAlignment = Alignment.Center
     ) {
         Box(
