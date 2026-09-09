@@ -115,7 +115,7 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
                         events = events,
                         initialEventIds = initialGridEventIds,
                         initialAlpha = initialAlpha,
-                        onCancel = { finish(); returnToHomeScreen() },
+                        onCancel = { finish() },
                         onSave = ::saveGridEvents
                     )
                 } else {
@@ -124,25 +124,13 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
                         events = events,
                         initialEventId = initialEventId,
                         initialAlpha = initialAlpha,
-                        onCancel = { finish(); returnToHomeScreen() },
+                        onCancel = { finish() },
                         onSave = ::saveEvent,
                         title = if (gridMode) "选择小组件事件" else "设置桌面小组件",
                         saveLabel = if (gridMode) "保存" else "添加"
                     )
                 }
             }
-        }
-    }
-
-    private fun returnToHomeScreen() {
-        try {
-            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(homeIntent)
-        } catch (_: Throwable) {
-            // Fallback gracefully
         }
     }
 
@@ -157,7 +145,6 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         setResult(RESULT_OK, result)
         finish()
-        returnToHomeScreen()
     }
 
     private fun saveGridEvents(eventIds: List<String?>, alpha: Float) {
@@ -167,7 +154,6 @@ class QuickEventWidgetConfigureActivity : ComponentActivity() {
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         setResult(RESULT_OK, result)
         finish()
-        returnToHomeScreen()
     }
 }
 
