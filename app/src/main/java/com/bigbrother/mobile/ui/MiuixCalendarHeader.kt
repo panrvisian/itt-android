@@ -366,11 +366,11 @@ fun MiuixLiquidGlassCapsuleButton(
 @Composable
 fun MiuixLiquidGlassMenuSurface(
     backdrop: LayerBackdrop?,
+    containerColor: Color,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
-    val containerColor = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.52f)
     val glassModifier = if (backdrop != null) {
         Modifier.drawBackdrop(
             backdrop = backdrop,

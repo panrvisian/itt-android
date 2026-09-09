@@ -2238,6 +2238,7 @@ private fun StatsRangeDropdown(
     }
     val currentLabel = ranges.first { it.first == range }.second
     val menuBackdrop = LocalCalendarButtonBackdrop.current
+    val menuSurfaceColor = MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.52f)
     val popupColors = MiuixTheme.colorScheme.copy(surfaceContainer = Color.Transparent)
 
     Box {
@@ -2263,7 +2264,10 @@ private fun StatsRangeDropdown(
                 onDismissRequest = { expanded = false },
                 minWidth = 148.dp
             ) {
-                MiuixLiquidGlassMenuSurface(backdrop = menuBackdrop) {
+                MiuixLiquidGlassMenuSurface(
+                    backdrop = menuBackdrop,
+                    containerColor = menuSurfaceColor
+                ) {
                     MiuixListPopupColumn {
                         ranges.forEachIndexed { index, (candidate, label) ->
                             MiuixDropdownItem(
