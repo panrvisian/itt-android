@@ -1138,7 +1138,6 @@ private fun HomeScreen(
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
     val recordMode by viewModel.recordMode.collectAsStateWithLifecycle()
-    val triStateMode by viewModel.triStateMode.collectAsStateWithLifecycle()
     val clockState = rememberClockState(enabled = contentActive)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
@@ -1201,8 +1200,7 @@ private fun HomeScreen(
                     settings = settings,
                     clockState = clockState,
                     recordMode = recordMode,
-                    triStateMode = triStateMode,
-                    onTriStateCycle = viewModel::cycleTriStateMode,
+                    onRecordModeCycle = viewModel::cycleRecordMode,
                     onRecordModeChange = viewModel::setRecordMode,
                     onEndAll = viewModel::endAllRunningRecords,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
@@ -1372,8 +1370,7 @@ private fun HomeDashboardWidgets(
     settings: AppSettings,
     clockState: State<Long>,
     recordMode: RecordMode,
-    triStateMode: TriStateMode,
-    onTriStateCycle: () -> Unit,
+    onRecordModeCycle: () -> Unit,
     onRecordModeChange: (RecordMode) -> Unit,
     onEndAll: () -> Unit,
     modifier: Modifier = Modifier
@@ -1382,18 +1379,18 @@ private fun HomeDashboardWidgets(
     val componentAlpha = LocalComponentAlpha.current
     val isDark = LocalIsDarkTheme.current
 
-    val (activeColor, statusLabel) = when (triStateMode) {
-        TriStateMode.Red -> Color(0xFFE53935) to "红"
-        TriStateMode.Yellow -> Color(0xFFFBC02D) to "黄"
-        TriStateMode.Green -> Color(0xFF43A047) to "绿"
+    val (activeColor, statusLabel, modeDescription) = when (recordMode) {
+        RecordMode.Backfill -> Triple(Color(0xFFE53935), "补录", "长按事件从上一结束时刻填满到现在；相同事件合并")
+        RecordMode.Clone -> Triple(Color(0xFFFBC02D), "克隆", "长按事件直接按上一已完成记录的时间段复制")
+        RecordMode.Realtime -> Triple(Color(0xFF43A047), "实时", "长按事件开启即时走秒打卡，再次长按结束")
     }
 
     var targetRotation by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(triStateMode) {
-        val modeIndex = when (triStateMode) {
-            TriStateMode.Red -> 0
-            TriStateMode.Yellow -> 1
-            TriStateMode.Green -> 2
+    LaunchedEffect(recordMode) {
+        val modeIndex = when (recordMode) {
+            RecordMode.Backfill -> 0
+            RecordMode.Clone -> 1
+            RecordMode.Realtime -> 2
         }
         val currentModIndex = ((targetRotation / 120f).roundToInt() % 3 + 3) % 3
         var diff = modeIndex - currentModIndex
@@ -1413,16 +1410,16 @@ private fun HomeDashboardWidgets(
     )
 
     val strokeColor = if (isDark) {
-        when (triStateMode) {
-            TriStateMode.Red -> Color(0xFF880E4F)
-            TriStateMode.Yellow -> Color(0xFFE65100)
-            TriStateMode.Green -> Color(0xFF1B5E20)
+        when (recordMode) {
+            RecordMode.Backfill -> Color(0xFF880E4F)
+            RecordMode.Clone -> Color(0xFFE65100)
+            RecordMode.Realtime -> Color(0xFF1B5E20)
         }
     } else {
-        when (triStateMode) {
-            TriStateMode.Red -> Color(0xFFFFCDD2)
-            TriStateMode.Yellow -> Color(0xFFFFF9C4)
-            TriStateMode.Green -> Color(0xFFC8E6C9)
+        when (recordMode) {
+            RecordMode.Backfill -> Color(0xFFFFCDD2)
+            RecordMode.Clone -> Color(0xFFFFF9C4)
+            RecordMode.Realtime -> Color(0xFFC8E6C9)
         }
     }
 
@@ -1466,7 +1463,7 @@ private fun HomeDashboardWidgets(
                             if (settings.vibrationEnabled) {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                            onTriStateCycle()
+                            onRecordModeCycle()
                         }
                 ) {
                     Canvas(
@@ -1484,20 +1481,20 @@ private fun HomeDashboardWidgets(
                             style = Stroke(width = trackStroke)
                         )
 
-                        // 3 Dots: Red (Base 0°), Yellow (Base 240°), Green (Base 120°)
+                        // 3 Dots: Backfill Red (0°), Clone Yellow (240°), Realtime Green (120°)
                         val dots = listOf(
-                            TriStateMode.Red to 0.0,
-                            TriStateMode.Yellow to 240.0,
-                            TriStateMode.Green to 120.0
+                            RecordMode.Backfill to 0.0,
+                            RecordMode.Clone to 240.0,
+                            RecordMode.Realtime to 120.0
                         )
 
                         dots.forEach { (mode, baseAngleDeg) ->
                             val dotColor = when (mode) {
-                                TriStateMode.Red -> Color(0xFFE53935)
-                                TriStateMode.Yellow -> Color(0xFFFBC02D)
-                                TriStateMode.Green -> Color(0xFF43A047)
+                                RecordMode.Backfill -> Color(0xFFE53935)
+                                RecordMode.Clone -> Color(0xFFFBC02D)
+                                RecordMode.Realtime -> Color(0xFF43A047)
                             }
-                            val isActive = mode == triStateMode
+                            val isActive = mode == recordMode
                             val currentAngleRad = Math.toRadians(baseAngleDeg + animatedRotation.toDouble())
                             val dx = (cx + radius * Math.cos(currentAngleRad)).toFloat()
                             val dy = (cy + radius * Math.sin(currentAngleRad)).toFloat()
@@ -1531,11 +1528,11 @@ private fun HomeDashboardWidgets(
                         drawPath(path = pointerPath, color = activeColor)
                     }
 
-                    // Center Character Label ("红" / "黄" / "绿")
+                    // Center Character Label ("补录" / "克隆" / "实时")
                     Text(
                         text = statusLabel,
                         modifier = Modifier.align(Alignment.Center),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = activeColor
                     )
@@ -1557,21 +1554,39 @@ private fun HomeDashboardWidgets(
                     )
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable {
+                                if (settings.vibrationEnabled) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                                onRecordModeCycle()
+                            }
+                            .padding(12.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "记录模式",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = statusLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = activeColor
+                            )
+                        }
                         Text(
-                            text = "记录模式",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = modeDescription,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                        )
-                        KernelSegmentedControl(
-                            labels = listOf("实时", "补录"),
-                            selectedIndex = if (recordMode == RecordMode.Realtime) 0 else 1,
-                            onSelected = { index ->
-                                onRecordModeChange(if (index == 0) RecordMode.Realtime else RecordMode.Backfill)
-                            }
+                            maxLines = 3
                         )
                     }
                 }

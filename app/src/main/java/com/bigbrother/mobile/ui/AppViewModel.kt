@@ -35,13 +35,8 @@ import java.time.LocalDate
 
 enum class RecordMode {
     Realtime,
-    Backfill
-}
-
-enum class TriStateMode {
-    Red,
-    Yellow,
-    Green
+    Backfill,
+    Clone
 }
 
 enum class AppTab {
@@ -100,14 +95,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _recordMode = MutableStateFlow(RecordMode.Realtime)
     val recordMode: StateFlow<RecordMode> = _recordMode.asStateFlow()
 
-    private val _triStateMode = MutableStateFlow(TriStateMode.Red)
-    val triStateMode: StateFlow<TriStateMode> = _triStateMode.asStateFlow()
-
-    fun cycleTriStateMode() {
-        _triStateMode.value = when (_triStateMode.value) {
-            TriStateMode.Red -> TriStateMode.Yellow
-            TriStateMode.Yellow -> TriStateMode.Green
-            TriStateMode.Green -> TriStateMode.Red
+    fun cycleRecordMode() {
+        _recordMode.value = when (_recordMode.value) {
+            RecordMode.Realtime -> RecordMode.Backfill
+            RecordMode.Backfill -> RecordMode.Clone
+            RecordMode.Clone -> RecordMode.Realtime
         }
     }
 
@@ -186,23 +178,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun handleEventLongPress(eventId: String) {
-        if (_recordMode.value == RecordMode.Backfill) {
-            viewModelScope.launch {
-                val today = LocalDate.now()
-                val currentRecords = repository.records.first()
-                val latestEndedToday = currentRecords
-                    .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
-                    .maxOfOrNull { it.endTime!! }
-                val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
-                val endTime = TimeUtils.now()
-                if (endTime > startTime) {
-                    repository.addBackfillRecord(eventId, startTime, endTime)
-                } else {
+        viewModelScope.launch {
+            when (_recordMode.value) {
+                RecordMode.Realtime -> {
                     repository.startEvent(eventId)
                 }
+                RecordMode.Backfill -> {
+                    val today = LocalDate.now()
+                    val currentRecords = repository.records.first()
+                    val latestEndedToday = currentRecords
+                        .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
+                        .maxOfOrNull { it.endTime!! }
+                    val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
+                    val endTime = TimeUtils.now()
+                    if (endTime > startTime) {
+                        repository.addBackfillRecord(eventId, startTime, endTime)
+                    } else {
+                        repository.startEvent(eventId)
+                    }
+                }
+                RecordMode.Clone -> {
+                    val currentRecords = repository.records.first()
+                    val lastCompleted = currentRecords
+                        .filter { it.endTime != null }
+                        .maxByOrNull { it.endTime!! }
+                    if (lastCompleted != null) {
+                        repository.cloneRecord(lastCompleted.id, eventId)
+                    } else {
+                        repository.startEvent(eventId)
+                    }
+                }
             }
-        } else {
-            viewModelScope.launch { repository.startEvent(eventId) }
         }
     }
 
