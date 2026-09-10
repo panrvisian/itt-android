@@ -8,6 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -143,11 +146,14 @@ fun MiuixCalendarHeader(
         CalendarHeaderMode.Semester -> "当前学期"
     }
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val componentAlpha = LocalComponentAlpha.current
     val headerBg = if (LocalGlassEffect.current) {
         Color.Transparent
     } else {
-        MaterialTheme.colorScheme.background.copy(alpha = componentAlpha)
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(
+            alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * componentAlpha).coerceIn(0f, 1f)
+        )
     }
 
     Column(
@@ -155,6 +161,7 @@ fun MiuixCalendarHeader(
             .fillMaxWidth()
             .background(headerBg)
             .animateContentSize(animationSpec = spring(dampingRatio = 0.9f, stiffness = 500f))
+            .padding(top = statusBarTop + 8.dp, bottom = 8.dp)
             .padding(horizontal = 20.dp)
     ) {
         Box(
