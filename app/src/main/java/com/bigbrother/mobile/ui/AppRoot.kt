@@ -4951,12 +4951,12 @@ private fun TimelineDayView(
                     text = hour.toString().padStart(2, '0') + ":00",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.offset(y = y).width(labelWidth),
+                    modifier = Modifier.offset(y = y - 7.dp).width(labelWidth),
                     textAlign = TextAlign.End
                 )
                 Box(
                     modifier = Modifier
-                        .offset(x = labelWidth + 6.dp, y = y + 8.dp)
+                        .offset(x = labelWidth + 6.dp, y = y)
                         .fillMaxWidth()
                         .height(1.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant)
@@ -4981,9 +4981,10 @@ private fun TimelineDayView(
             }
             if (showNowLine) {
                 val nowMinutes = ((now - dayStart).toDouble() / 60000.0).coerceIn(0.0, 1440.0)
+                val nowY = minuteHeight * nowMinutes.toFloat()
                 Box(
                     modifier = Modifier
-                        .offset(x = labelWidth + 6.dp, y = minuteHeight * nowMinutes.toFloat())
+                        .offset(x = labelWidth + 6.dp, y = nowY)
                         .width(contentWidth)
                         .height(2.dp)
                         .background(MaterialTheme.colorScheme.error)
@@ -4992,7 +4993,7 @@ private fun TimelineDayView(
                     text = TimeUtils.formatTime(now, settings.use24Hour),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.offset(x = 0.dp, y = minuteHeight * nowMinutes.toFloat() - 8.dp).width(labelWidth),
+                    modifier = Modifier.offset(x = 0.dp, y = nowY - 7.dp).width(labelWidth),
                     textAlign = TextAlign.End
                 )
             }
