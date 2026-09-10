@@ -20,6 +20,13 @@ import java.util.zip.ZipOutputStream
 data class NoteEditorState(val text: String, val imageNames: List<String>)
 data class NoteViewState(val text: String, val imageNames: List<String>)
 
+sealed interface RecordActionResult {
+    data class BackfillCreated(val eventName: String, val startTime: Long, val endTime: Long) : RecordActionResult
+    data class BackfillMerged(val eventName: String, val newEndTime: Long) : RecordActionResult
+    data class CloneCreated(val eventName: String, val startTime: Long, val endTime: Long) : RecordActionResult
+    data class CloneMerged(val eventName: String, val newEndTime: Long) : RecordActionResult
+}
+
 class AppRepository(
     private val context: Context,
     private val database: AppDatabase,
@@ -174,18 +181,18 @@ class AppRepository(
         }
     }
 
-    suspend fun addBackfillRecord(eventId: String, startTime: Long, endTime: Long): String = database.withTransaction {
+    suspend fun addBackfillRecord(eventId: String, startTime: Long, endTime: Long): RecordActionResult = database.withTransaction {
         val today = TimeUtils.toLocalDate(startTime)
         val lastEnded = recordsDao.getAllOnce()
             .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
             .maxByOrNull { it.endTime!! }
+        val event = eventsDao.getById(eventId) ?: error("event not found")
 
         if (lastEnded != null && lastEnded.eventId == eventId) {
             recordsDao.end(lastEnded.id, endTime)
             normalizeOvernightInTransaction()
-            lastEnded.id
+            RecordActionResult.BackfillMerged(event.name, endTime)
         } else {
-            val event = eventsDao.getById(eventId) ?: error("event not found")
             val group = groupsDao.getById(event.groupId) ?: error("group not found")
             val record = RecordEntity(
                 eventId = event.id,
@@ -198,9 +205,40 @@ class AppRepository(
             )
             recordsDao.insert(record)
             normalizeOvernightInTransaction()
-            record.id
+            RecordActionResult.BackfillCreated(event.name, startTime, endTime)
         }
     }.also { requestWidgetRefresh() }
+
+    suspend fun addCloneRecord(eventId: String): RecordActionResult? = database.withTransaction {
+        val lastCompleted = recordsDao.getAllOnce()
+            .filter { it.endTime != null }
+            .maxByOrNull { it.endTime!! } ?: return@withTransaction null
+
+        val event = eventsDao.getById(eventId) ?: return@withTransaction null
+        val lastEndTime = lastCompleted.endTime!!
+        val duration = lastEndTime - lastCompleted.startTime
+
+        if (lastCompleted.eventId == eventId) {
+            val newEndTime = lastEndTime + duration
+            recordsDao.end(lastCompleted.id, newEndTime)
+            normalizeOvernightInTransaction()
+            RecordActionResult.CloneMerged(event.name, newEndTime)
+        } else {
+            val group = groupsDao.getById(event.groupId) ?: return@withTransaction null
+            val cloned = RecordEntity(
+                eventId = event.id,
+                eventNameSnapshot = event.name,
+                groupIdSnapshot = group.id,
+                groupNameSnapshot = group.name,
+                groupColorArgbSnapshot = group.colorArgb,
+                startTime = lastCompleted.startTime,
+                endTime = lastEndTime
+            )
+            recordsDao.insert(cloned)
+            normalizeOvernightInTransaction()
+            RecordActionResult.CloneCreated(event.name, lastCompleted.startTime, lastEndTime)
+        }
+    }?.also { requestWidgetRefresh() }
 
     suspend fun addManualRecord(eventId: String, startTime: Long, endTime: Long): String = database.withTransaction {
         val event = eventsDao.getById(eventId) ?: error("event not found")

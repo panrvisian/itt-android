@@ -15,6 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -22,8 +26,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
@@ -438,6 +445,14 @@ fun AppRoot(
     }
 
     val tabs = remember { appBottomBarDestinations.map { it.tab } }
+    val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+
+    LaunchedEffect(toastMessage) {
+        if (toastMessage != null) {
+            delay(2200)
+            viewModel.dismissToast()
+        }
+    }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0), pageCount = { tabs.size })
     val pagerNavigationScope = rememberCoroutineScope()
     val startupReadyCallback by rememberUpdatedState(onStartupContentReady)
@@ -639,11 +654,49 @@ fun AppRoot(
                     )
                 }
             ) { padding ->
+                val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .then(if (bottomBarBackdrop != null) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                 ) {
+                    AnimatedVisibility(
+                        visible = toastMessage != null,
+                        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = statusBarTop + 60.dp)
+                            .zIndex(100f)
+                    ) {
+                        toastMessage?.let { msg ->
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.inverseSurface,
+                                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                                shadowElevation = 8.dp,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = msg,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
                     WallpaperBackground(
                         settings = settings,
                         glassEffectEnabled = settings.glassEffectEnabled,

@@ -14,6 +14,7 @@ import com.bigbrother.mobile.data.FontScaleMode
 import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.NoteEditorState
 import com.bigbrother.mobile.data.NoteViewState
+import com.bigbrother.mobile.data.RecordActionResult
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
@@ -94,6 +95,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _recordMode = MutableStateFlow(RecordMode.Realtime)
     val recordMode: StateFlow<RecordMode> = _recordMode.asStateFlow()
+
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+    fun dismissToast() {
+        _toastMessage.value = null
+    }
 
     fun cycleRecordMode() {
         _recordMode.value = when (_recordMode.value) {
@@ -192,20 +200,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
                     val endTime = TimeUtils.now()
                     if (endTime > startTime) {
-                        repository.addBackfillRecord(eventId, startTime, endTime)
+                        val result = repository.addBackfillRecord(eventId, startTime, endTime)
+                        _toastMessage.value = when (result) {
+                            is RecordActionResult.BackfillCreated ->
+                                "已无缝补录 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
+                            is RecordActionResult.BackfillMerged ->
+                                "已合并延长 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
+                            else -> null
+                        }
                     } else {
                         repository.startEvent(eventId)
                     }
                 }
                 RecordMode.Clone -> {
-                    val currentRecords = repository.records.first()
-                    val lastCompleted = currentRecords
-                        .filter { it.endTime != null }
-                        .maxByOrNull { it.endTime!! }
-                    if (lastCompleted != null) {
-                        repository.cloneRecord(lastCompleted.id, eventId)
-                    } else {
-                        repository.startEvent(eventId)
+                    val result = repository.addCloneRecord(eventId)
+                    _toastMessage.value = when (result) {
+                        is RecordActionResult.CloneCreated ->
+                            "已克隆 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
+                        is RecordActionResult.CloneMerged ->
+                            "已扩展克隆 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
+                        else -> "暂无可用已完成记录"
                     }
                 }
             }
