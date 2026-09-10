@@ -1395,11 +1395,11 @@ private fun HomeDashboardWidgets(
             TriStateMode.Yellow -> 1
             TriStateMode.Green -> 2
         }
-        val currentModIndex = ((targetRotation / -120f).roundToInt() % 3 + 3) % 3
+        val currentModIndex = ((targetRotation / 120f).roundToInt() % 3 + 3) % 3
         var diff = modeIndex - currentModIndex
         if (diff <= 0) diff += 3
         if (targetRotation != 0f || modeIndex != 0) {
-            targetRotation -= diff * 120f
+            targetRotation += diff * 120f
         }
     }
 
@@ -1470,13 +1470,11 @@ private fun HomeDashboardWidgets(
                         }
                 ) {
                     Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(14.dp)
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         val cx = size.width / 2f
                         val cy = size.height / 2f
-                        val radius = size.minDimension / 2f - 14.dp.toPx()
+                        val radius = size.minDimension / 2f - 22.dp.toPx()
                         val trackStroke = 4.dp.toPx()
 
                         // Circular Track (Deep Dark Blue in Dark mode, Light Blue in Light mode)
@@ -1486,11 +1484,11 @@ private fun HomeDashboardWidgets(
                             style = Stroke(width = trackStroke)
                         )
 
-                        // 3 Dots: Red (Base 0°), Yellow (Base 120°), Green (Base 240°)
+                        // 3 Dots: Red (Base 0°), Yellow (Base 240°), Green (Base 120°)
                         val dots = listOf(
                             TriStateMode.Red to 0.0,
-                            TriStateMode.Yellow to 120.0,
-                            TriStateMode.Green to 240.0
+                            TriStateMode.Yellow to 240.0,
+                            TriStateMode.Green to 120.0
                         )
 
                         dots.forEach { (mode, baseAngleDeg) ->
@@ -1519,11 +1517,11 @@ private fun HomeDashboardWidgets(
                             )
                         }
 
-                        // Fixed Triangle Pointer on Far Right Boundary Edge
+                        // Fixed Triangle Pointer flush with Card Outer Right Border (size.width)
                         val pointerPath = Path().apply {
                             val rightX = size.width
-                            val pointerDepth = 10.dp.toPx()
-                            val pointerHalfHeight = 8.dp.toPx()
+                            val pointerDepth = 12.dp.toPx()
+                            val pointerHalfHeight = 9.dp.toPx()
 
                             moveTo(rightX, cy - pointerHalfHeight)
                             lineTo(rightX - pointerDepth, cy)
