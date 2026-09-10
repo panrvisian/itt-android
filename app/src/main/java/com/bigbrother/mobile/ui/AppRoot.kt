@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -1137,6 +1138,7 @@ private fun HomeScreen(
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
     val recordMode by viewModel.recordMode.collectAsStateWithLifecycle()
+    val triStateMode by viewModel.triStateMode.collectAsStateWithLifecycle()
     val clockState = rememberClockState(enabled = contentActive)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
@@ -1199,6 +1201,8 @@ private fun HomeScreen(
                     settings = settings,
                     clockState = clockState,
                     recordMode = recordMode,
+                    triStateMode = triStateMode,
+                    onTriStateCycle = viewModel::cycleTriStateMode,
                     onRecordModeChange = viewModel::setRecordMode,
                     onEndAll = viewModel::endAllRunningRecords,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
@@ -1368,29 +1372,27 @@ private fun HomeDashboardWidgets(
     settings: AppSettings,
     clockState: State<Long>,
     recordMode: RecordMode,
+    triStateMode: TriStateMode,
+    onTriStateCycle: () -> Unit,
     onRecordModeChange: (RecordMode) -> Unit,
     onEndAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isWorking = running.isNotEmpty()
     val haptics = LocalHapticFeedback.current
     val componentAlpha = LocalComponentAlpha.current
-    val rawStatusColor = if (isWorking) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
+
+    val activeColor = when (triStateMode) {
+        TriStateMode.Red -> Color(0xFFE53935)
+        TriStateMode.Yellow -> Color(0xFFFBC02D)
+        TriStateMode.Green -> Color(0xFF43A047)
     }
-    val statusCardColor = rawStatusColor.copy(alpha = (rawStatusColor.alpha * componentAlpha).coerceIn(0f, 1f))
-    val statusContentColor = if (isWorking) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val statusIndicatorColor = if (isWorking) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
-    }
+
+    val animatedCardBg by animateColorAsState(
+        targetValue = activeColor.copy(alpha = (0.22f * componentAlpha).coerceIn(0.05f, 1f)),
+        animationSpec = tween(300),
+        label = "triStateCardBg"
+    )
+
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
         alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * componentAlpha).coerceIn(0f, 1f)
     )
@@ -1407,78 +1409,70 @@ private fun HomeDashboardWidgets(
                 modifier = Modifier.size(statusCardSize),
                 cornerRadius = 22.dp,
                 colors = MiuixCardDefaults.defaultColors(
-                    color = statusCardColor,
-                    contentColor = statusContentColor
+                    color = animatedCardBg,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(22.dp))
-                        .then(
-                            if (isWorking) {
-                                Modifier.combinedClickable(
-                                    onClick = {},
-                                    onLongClick = {
-                                        if (settings.vibrationEnabled) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        }
-                                        onEndAll()
-                                    }
-                                )
-                            } else {
-                                Modifier
+                        .clickable {
+                            if (settings.vibrationEnabled) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
-                        )
+                            onTriStateCycle()
+                        }
                 ) {
                     Canvas(
                         modifier = Modifier
-                            .size(132.dp)
-                            .align(Alignment.BottomEnd)
-                            .graphicsLayer {
-                                translationX = 28.dp.toPx()
-                                translationY = 24.dp.toPx()
-                            }
+                            .fillMaxSize()
+                            .padding(18.dp)
                     ) {
-                        val ringStroke = 12.dp.toPx()
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        val radius = size.minDimension / 2f - 8.dp.toPx()
+                        val trackStroke = 4.dp.toPx()
+
+                        // Draw Light Blue Circular Track
                         drawCircle(
-                            color = statusIndicatorColor,
-                            radius = size.minDimension / 2f - ringStroke / 2f,
-                            style = Stroke(width = ringStroke)
+                            color = Color(0xFFA2C8F5),
+                            radius = radius,
+                            style = Stroke(width = trackStroke)
                         )
-                        if (isWorking) {
-                            val checkPath = Path().apply {
-                                moveTo(size.width * 0.28f, size.height * 0.51f)
-                                lineTo(size.width * 0.46f, size.height * 0.68f)
-                                lineTo(size.width * 0.76f, size.height * 0.34f)
+
+                        // 3 Dots: Red (-90° / Top), Yellow (30° / Bottom Right), Green (150° / Bottom Left)
+                        val dots = listOf(
+                            TriStateMode.Red to Math.toRadians(-90.0),
+                            TriStateMode.Yellow to Math.toRadians(30.0),
+                            TriStateMode.Green to Math.toRadians(150.0)
+                        )
+
+                        dots.forEach { (mode, angleRad) ->
+                            val dotColor = when (mode) {
+                                TriStateMode.Red -> Color(0xFFE53935)
+                                TriStateMode.Yellow -> Color(0xFFFBC02D)
+                                TriStateMode.Green -> Color(0xFF43A047)
                             }
-                            drawPath(
-                                path = checkPath,
-                                color = statusIndicatorColor,
-                                style = Stroke(
-                                    width = 13.dp.toPx(),
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
+                            val isActive = mode == triStateMode
+                            val dx = (cx + radius * Math.cos(angleRad)).toFloat()
+                            val dy = (cy + radius * Math.sin(angleRad)).toFloat()
+                            val dotRadius = if (isActive) 11.dp.toPx() else 7.dp.toPx()
+
+                            if (isActive) {
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = dotRadius + 2.dp.toPx(),
+                                    center = Offset(dx, dy)
                                 )
+                            }
+                            drawCircle(
+                                color = dotColor,
+                                radius = dotRadius,
+                                center = Offset(dx, dy)
                             )
                         }
                     }
-
-                    Text(
-                        text = "当前",
-                        modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = statusContentColor.copy(alpha = 0.8f)
-                    )
-                    Text(
-                        text = if (isWorking) "工作中" else "空闲",
-                        modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 16.dp),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = statusContentColor,
-                        maxLines = 1
-                    )
                 }
             }
 

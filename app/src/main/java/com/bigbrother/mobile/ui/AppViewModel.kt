@@ -38,6 +38,12 @@ enum class RecordMode {
     Backfill
 }
 
+enum class TriStateMode {
+    Red,
+    Yellow,
+    Green
+}
+
 enum class AppTab {
     Home,
     Timeline,
@@ -93,6 +99,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _recordMode = MutableStateFlow(RecordMode.Realtime)
     val recordMode: StateFlow<RecordMode> = _recordMode.asStateFlow()
+
+    private val _triStateMode = MutableStateFlow(TriStateMode.Red)
+    val triStateMode: StateFlow<TriStateMode> = _triStateMode.asStateFlow()
+
+    fun cycleTriStateMode() {
+        _triStateMode.value = when (_triStateMode.value) {
+            TriStateMode.Red -> TriStateMode.Yellow
+            TriStateMode.Yellow -> TriStateMode.Green
+            TriStateMode.Green -> TriStateMode.Red
+        }
+    }
 
     init {
         viewModelScope.launch {
