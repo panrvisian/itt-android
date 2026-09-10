@@ -20,16 +20,23 @@ import com.bigbrother.mobile.data.TotalDurationMode
 import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.StatsRangeKind
+import com.bigbrother.mobile.domain.TimeUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+
+enum class RecordMode {
+    Realtime,
+    Backfill
+}
 
 enum class AppTab {
     Home,
@@ -83,6 +90,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _notesDate = MutableStateFlow(LocalDate.now())
     val notesDate: StateFlow<LocalDate> = _notesDate.asStateFlow()
+
+    private val _recordMode = MutableStateFlow(RecordMode.Realtime)
+    val recordMode: StateFlow<RecordMode> = _recordMode.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -152,6 +162,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteEvent(eventId: String) {
         viewModelScope.launch { repository.deleteEvent(eventId) }
+    }
+
+    fun setRecordMode(mode: RecordMode) {
+        _recordMode.value = mode
+    }
+
+    fun handleEventLongPress(eventId: String) {
+        if (_recordMode.value == RecordMode.Backfill) {
+            viewModelScope.launch {
+                val today = LocalDate.now()
+                val currentRecords = repository.records.first()
+                val latestEndedToday = currentRecords
+                    .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
+                    .maxOfOrNull { it.endTime!! }
+                val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
+                val endTime = TimeUtils.now()
+                if (endTime > startTime) {
+                    repository.addManualRecord(eventId, startTime, endTime)
+                } else {
+                    repository.startEvent(eventId)
+                }
+            }
+        } else {
+            viewModelScope.launch { repository.startEvent(eventId) }
+        }
     }
 
     fun startEvent(eventId: String) {

@@ -1136,6 +1136,7 @@ private fun HomeScreen(
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     val running = remember(records) { records.filter { it.endTime == null }.sortedByDescending { it.startTime } }
+    val recordMode by viewModel.recordMode.collectAsStateWithLifecycle()
     val clockState = rememberClockState(enabled = contentActive)
     val listState = rememberLazyListState()
     val density = LocalDensity.current
@@ -1197,6 +1198,8 @@ private fun HomeScreen(
                     running = running,
                     settings = settings,
                     clockState = clockState,
+                    recordMode = recordMode,
+                    onRecordModeChange = viewModel::setRecordMode,
                     onEndAll = viewModel::endAllRunningRecords,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
                         onRegisterOnboardingTarget(OnboardingTarget.HomeEvents, coordinates.boundsInRoot())
@@ -1248,7 +1251,7 @@ private fun HomeScreen(
                     events = eventsByGroup[group.id].orEmpty(),
                     eventRecordCounts = eventRecordCounts,
                     onEventClick = onEventClick,
-                    onEventLongPress = viewModel::startEvent,
+                    onEventLongPress = viewModel::handleEventLongPress,
                     onAddEvent = { onAddEventForGroup(group.id) },
                     onGroupLongPress = onGroupLongPress
                 )
@@ -1364,6 +1367,8 @@ private fun HomeDashboardWidgets(
     running: List<RecordEntity>,
     settings: AppSettings,
     clockState: State<Long>,
+    recordMode: RecordMode,
+    onRecordModeChange: (RecordMode) -> Unit,
     onEndAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1492,17 +1497,21 @@ private fun HomeDashboardWidgets(
                     )
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(14.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "当前时间",
+                            text = "记录模式",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                         )
-                        HomeCurrentTimeValue(
-                            clockState = clockState,
-                            use24Hour = settings.use24Hour
+                        KernelSegmentedControl(
+                            labels = listOf("实时", "补录"),
+                            selectedIndex = if (recordMode == RecordMode.Realtime) 0 else 1,
+                            onSelected = { index ->
+                                onRecordModeChange(if (index == 0) RecordMode.Realtime else RecordMode.Backfill)
+                            }
                         )
                     }
                 }
