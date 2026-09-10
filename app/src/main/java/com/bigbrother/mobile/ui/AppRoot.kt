@@ -13,6 +13,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -701,6 +703,21 @@ fun AppRoot(
                         settings = settings,
                         glassEffectEnabled = settings.glassEffectEnabled,
                         modifier = if (calendarButtonBackdrop != null) Modifier.layerBackdrop(calendarButtonBackdrop) else Modifier
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(statusBarTop + 140.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.55f),
+                                        Color.Black.copy(alpha = 0.22f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                            .zIndex(1f)
                     )
                     CompositionLocalProvider(
                         LocalComponentAlpha provides settings.componentAlpha,
@@ -1483,7 +1500,7 @@ private fun HomeDashboardWidgets(
     }
 
     val animatedCardBg by animateColorAsState(
-        targetValue = activeColor.copy(alpha = (0.22f * componentAlpha).coerceIn(0.05f, 1f)),
+        targetValue = activeColor.copy(alpha = (0.38f * componentAlpha).coerceIn(0.18f, 1f)),
         animationSpec = tween(300),
         label = "triStateCardBg"
     )
@@ -1501,7 +1518,9 @@ private fun HomeDashboardWidgets(
             horizontalArrangement = Arrangement.spacedBy(dashboardGap)
         ) {
             MiuixCard(
-                modifier = Modifier.size(statusCardSize),
+                modifier = Modifier
+                    .size(statusCardSize)
+                    .border(BorderStroke(1.dp, activeColor.copy(alpha = if (isDark) 0.5f else 0.35f)), shape = RoundedCornerShape(22.dp)),
                 cornerRadius = 22.dp,
                 colors = MiuixCardDefaults.defaultColors(
                     color = animatedCardBg,
@@ -2061,7 +2080,6 @@ private fun TimelineScreen(
     val listState = rememberLazyListState()
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = day,
@@ -2070,7 +2088,6 @@ private fun TimelineScreen(
             onExpandedChange = { calendarExpanded = it },
             onDateSelected = viewModel::setTimelineDate,
             modifier = Modifier
-                .padding(top = statusBarTop + 12.dp)
                 .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
                 },
@@ -2233,7 +2250,6 @@ private fun StatsScreen(
         }
     }
 
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = date,
@@ -2243,7 +2259,6 @@ private fun StatsScreen(
             onDateSelected = onDateChange,
             semesterStart = periodStartDate,
             semesterEnd = periodEndDate,
-            modifier = Modifier.padding(top = statusBarTop + 12.dp),
             actions = {
                 StatsRangeDropdown(
                     range = range,
