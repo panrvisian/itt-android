@@ -1388,17 +1388,26 @@ private fun HomeDashboardWidgets(
         TriStateMode.Green -> Color(0xFF43A047) to "绿"
     }
 
-    val targetAngle = when (triStateMode) {
-        TriStateMode.Red -> 0f
-        TriStateMode.Yellow -> -120f
-        TriStateMode.Green -> -240f
+    var targetRotation by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(triStateMode) {
+        val modeIndex = when (triStateMode) {
+            TriStateMode.Red -> 0
+            TriStateMode.Yellow -> 1
+            TriStateMode.Green -> 2
+        }
+        val currentModIndex = ((targetRotation / -120f).roundToInt() % 3 + 3) % 3
+        var diff = modeIndex - currentModIndex
+        if (diff <= 0) diff += 3
+        if (targetRotation != 0f || modeIndex != 0) {
+            targetRotation -= diff * 120f
+        }
     }
 
     val animatedRotation by animateFloatAsState(
-        targetValue = targetAngle,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+        targetValue = targetRotation,
+        animationSpec = tween(
+            durationMillis = 350,
+            easing = FastOutSlowInEasing
         ),
         label = "triStateRotation"
     )
@@ -1410,7 +1419,17 @@ private fun HomeDashboardWidgets(
             TriStateMode.Green -> Color(0xFF1B5E20)
         }
     } else {
-        Color.White
+        when (triStateMode) {
+            TriStateMode.Red -> Color(0xFFFFCDD2)
+            TriStateMode.Yellow -> Color(0xFFFFF9C4)
+            TriStateMode.Green -> Color(0xFFC8E6C9)
+        }
+    }
+
+    val trackColor = if (isDark) {
+        Color(0xFF1E3A5F)
+    } else {
+        Color(0xFFA2C8F5)
     }
 
     val animatedCardBg by animateColorAsState(
@@ -1460,9 +1479,9 @@ private fun HomeDashboardWidgets(
                         val radius = size.minDimension / 2f - 14.dp.toPx()
                         val trackStroke = 4.dp.toPx()
 
-                        // Draw Light Blue Circular Track
+                        // Circular Track (Deep Dark Blue in Dark mode, Light Blue in Light mode)
                         drawCircle(
-                            color = Color(0xFFA2C8F5),
+                            color = trackColor,
                             radius = radius,
                             style = Stroke(width = trackStroke)
                         )
@@ -1500,13 +1519,15 @@ private fun HomeDashboardWidgets(
                             )
                         }
 
-                        // Fixed Triangle Pointer on Far Right (3 o'clock direction)
+                        // Fixed Triangle Pointer on Far Right Boundary Edge
                         val pointerPath = Path().apply {
-                            val px = cx + radius + 11.dp.toPx()
-                            val py = cy
-                            moveTo(px + 4.dp.toPx(), py)
-                            lineTo(px - 4.dp.toPx(), py - 5.dp.toPx())
-                            lineTo(px - 4.dp.toPx(), py + 5.dp.toPx())
+                            val rightX = size.width
+                            val pointerDepth = 10.dp.toPx()
+                            val pointerHalfHeight = 8.dp.toPx()
+
+                            moveTo(rightX, cy - pointerHalfHeight)
+                            lineTo(rightX - pointerDepth, cy)
+                            lineTo(rightX, cy + pointerHalfHeight)
                             close()
                         }
                         drawPath(path = pointerPath, color = activeColor)
