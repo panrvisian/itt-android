@@ -174,6 +174,34 @@ class AppRepository(
         }
     }
 
+    suspend fun addBackfillRecord(eventId: String, startTime: Long, endTime: Long): String = database.withTransaction {
+        val today = TimeUtils.toLocalDate(startTime)
+        val lastEnded = recordsDao.getAllOnce()
+            .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
+            .maxByOrNull { it.endTime!! }
+
+        if (lastEnded != null && lastEnded.eventId == eventId) {
+            recordsDao.end(lastEnded.id, endTime)
+            normalizeOvernightInTransaction()
+            lastEnded.id
+        } else {
+            val event = eventsDao.getById(eventId) ?: error("event not found")
+            val group = groupsDao.getById(event.groupId) ?: error("group not found")
+            val record = RecordEntity(
+                eventId = event.id,
+                eventNameSnapshot = event.name,
+                groupIdSnapshot = group.id,
+                groupNameSnapshot = group.name,
+                groupColorArgbSnapshot = group.colorArgb,
+                startTime = startTime,
+                endTime = endTime
+            )
+            recordsDao.insert(record)
+            normalizeOvernightInTransaction()
+            record.id
+        }
+    }.also { requestWidgetRefresh() }
+
     suspend fun addManualRecord(eventId: String, startTime: Long, endTime: Long): String = database.withTransaction {
         val event = eventsDao.getById(eventId) ?: error("event not found")
         val group = groupsDao.getById(event.groupId) ?: error("group not found")

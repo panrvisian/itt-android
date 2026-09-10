@@ -196,7 +196,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
                 val endTime = TimeUtils.now()
                 if (endTime > startTime) {
-                    repository.addManualRecord(eventId, startTime, endTime)
+                    repository.addBackfillRecord(eventId, startTime, endTime)
                 } else {
                     repository.startEvent(eventId)
                 }
