@@ -1450,9 +1450,9 @@ private fun HomeDashboardWidgets(
     val isDark = LocalIsDarkTheme.current
 
     val (activeColor, statusLabel, modeDescription) = when (recordMode) {
-        RecordMode.Backfill -> Triple(Color(0xFFE53935), "补录", "长按事件从上一结束时刻填满到现在；相同事件合并")
-        RecordMode.Clone -> Triple(Color(0xFFFBC02D), "克隆", "长按事件直接按上一已完成记录的时间段复制")
-        RecordMode.Realtime -> Triple(Color(0xFF43A047), "实时", "长按事件开启即时走秒打卡，再次长按结束")
+        RecordMode.Backfill -> Triple(Color(0xFFE53935), "补录", "填满上一结束时间至此刻\n(同事件长按自动合并)")
+        RecordMode.Clone -> Triple(Color(0xFFFBC02D), "克隆", "复制上一已完成记录时间段\n(同事件长按自动合并)")
+        RecordMode.Realtime -> Triple(Color(0xFF43A047), "实时", "即时开启走秒与计时\n(再次长按即刻结束)")
     }
 
     var targetRotation by remember { mutableFloatStateOf(0f) }
