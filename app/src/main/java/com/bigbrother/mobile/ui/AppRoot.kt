@@ -1380,11 +1380,37 @@ private fun HomeDashboardWidgets(
 ) {
     val haptics = LocalHapticFeedback.current
     val componentAlpha = LocalComponentAlpha.current
+    val isDark = LocalIsDarkTheme.current
 
-    val activeColor = when (triStateMode) {
-        TriStateMode.Red -> Color(0xFFE53935)
-        TriStateMode.Yellow -> Color(0xFFFBC02D)
-        TriStateMode.Green -> Color(0xFF43A047)
+    val (activeColor, statusLabel) = when (triStateMode) {
+        TriStateMode.Red -> Color(0xFFE53935) to "红"
+        TriStateMode.Yellow -> Color(0xFFFBC02D) to "黄"
+        TriStateMode.Green -> Color(0xFF43A047) to "绿"
+    }
+
+    val targetAngle = when (triStateMode) {
+        TriStateMode.Red -> 0f
+        TriStateMode.Yellow -> -120f
+        TriStateMode.Green -> -240f
+    }
+
+    val animatedRotation by animateFloatAsState(
+        targetValue = targetAngle,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "triStateRotation"
+    )
+
+    val strokeColor = if (isDark) {
+        when (triStateMode) {
+            TriStateMode.Red -> Color(0xFF880E4F)
+            TriStateMode.Yellow -> Color(0xFFE65100)
+            TriStateMode.Green -> Color(0xFF1B5E20)
+        }
+    } else {
+        Color.White
     }
 
     val animatedCardBg by animateColorAsState(
@@ -1427,11 +1453,11 @@ private fun HomeDashboardWidgets(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(18.dp)
+                            .padding(14.dp)
                     ) {
                         val cx = size.width / 2f
                         val cy = size.height / 2f
-                        val radius = size.minDimension / 2f - 8.dp.toPx()
+                        val radius = size.minDimension / 2f - 14.dp.toPx()
                         val trackStroke = 4.dp.toPx()
 
                         // Draw Light Blue Circular Track
@@ -1441,28 +1467,29 @@ private fun HomeDashboardWidgets(
                             style = Stroke(width = trackStroke)
                         )
 
-                        // 3 Dots: Red (-90° / Top), Yellow (30° / Bottom Right), Green (150° / Bottom Left)
+                        // 3 Dots: Red (Base 0°), Yellow (Base 120°), Green (Base 240°)
                         val dots = listOf(
-                            TriStateMode.Red to Math.toRadians(-90.0),
-                            TriStateMode.Yellow to Math.toRadians(30.0),
-                            TriStateMode.Green to Math.toRadians(150.0)
+                            TriStateMode.Red to 0.0,
+                            TriStateMode.Yellow to 120.0,
+                            TriStateMode.Green to 240.0
                         )
 
-                        dots.forEach { (mode, angleRad) ->
+                        dots.forEach { (mode, baseAngleDeg) ->
                             val dotColor = when (mode) {
                                 TriStateMode.Red -> Color(0xFFE53935)
                                 TriStateMode.Yellow -> Color(0xFFFBC02D)
                                 TriStateMode.Green -> Color(0xFF43A047)
                             }
                             val isActive = mode == triStateMode
-                            val dx = (cx + radius * Math.cos(angleRad)).toFloat()
-                            val dy = (cy + radius * Math.sin(angleRad)).toFloat()
+                            val currentAngleRad = Math.toRadians(baseAngleDeg + animatedRotation.toDouble())
+                            val dx = (cx + radius * Math.cos(currentAngleRad)).toFloat()
+                            val dy = (cy + radius * Math.sin(currentAngleRad)).toFloat()
                             val dotRadius = if (isActive) 11.dp.toPx() else 7.dp.toPx()
 
                             if (isActive) {
                                 drawCircle(
-                                    color = Color.White,
-                                    radius = dotRadius + 2.dp.toPx(),
+                                    color = strokeColor,
+                                    radius = dotRadius + 3.dp.toPx(),
                                     center = Offset(dx, dy)
                                 )
                             }
@@ -1472,7 +1499,27 @@ private fun HomeDashboardWidgets(
                                 center = Offset(dx, dy)
                             )
                         }
+
+                        // Fixed Triangle Pointer on Far Right (3 o'clock direction)
+                        val pointerPath = Path().apply {
+                            val px = cx + radius + 11.dp.toPx()
+                            val py = cy
+                            moveTo(px + 4.dp.toPx(), py)
+                            lineTo(px - 4.dp.toPx(), py - 5.dp.toPx())
+                            lineTo(px - 4.dp.toPx(), py + 5.dp.toPx())
+                            close()
+                        }
+                        drawPath(path = pointerPath, color = activeColor)
                     }
+
+                    // Center Character Label ("红" / "黄" / "绿")
+                    Text(
+                        text = statusLabel,
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = activeColor
+                    )
                 }
             }
 
