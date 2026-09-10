@@ -14,22 +14,31 @@ import com.bigbrother.mobile.data.FontScaleMode
 import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.NoteEditorState
 import com.bigbrother.mobile.data.NoteViewState
+import com.bigbrother.mobile.data.RecordActionResult
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
 import com.bigbrother.mobile.data.TotalDurationMode
 import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
 import com.bigbrother.mobile.domain.StatsRangeKind
+import com.bigbrother.mobile.domain.TimeUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+
+enum class RecordMode {
+    Realtime,
+    Backfill,
+    Clone
+}
 
 enum class AppTab {
     Home,
@@ -83,6 +92,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _notesDate = MutableStateFlow(LocalDate.now())
     val notesDate: StateFlow<LocalDate> = _notesDate.asStateFlow()
+
+    private val _recordMode = MutableStateFlow(RecordMode.Realtime)
+    val recordMode: StateFlow<RecordMode> = _recordMode.asStateFlow()
+
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+    fun dismissToast() {
+        _toastMessage.value = null
+    }
+
+    fun cycleRecordMode() {
+        _recordMode.value = when (_recordMode.value) {
+            RecordMode.Realtime -> RecordMode.Backfill
+            RecordMode.Backfill -> RecordMode.Clone
+            RecordMode.Clone -> RecordMode.Realtime
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -152,6 +179,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteEvent(eventId: String) {
         viewModelScope.launch { repository.deleteEvent(eventId) }
+    }
+
+    fun setRecordMode(mode: RecordMode) {
+        _recordMode.value = mode
+    }
+
+    fun handleEventLongPress(eventId: String) {
+        viewModelScope.launch {
+            when (_recordMode.value) {
+                RecordMode.Realtime -> {
+                    repository.startEvent(eventId)
+                }
+                RecordMode.Backfill -> {
+                    val today = LocalDate.now()
+                    val currentRecords = repository.records.first()
+                    val latestEndedToday = currentRecords
+                        .filter { it.endTime != null && TimeUtils.toLocalDate(it.startTime) == today }
+                        .maxOfOrNull { it.endTime!! }
+                    val startTime = latestEndedToday ?: TimeUtils.startOfDay(today)
+                    val endTime = TimeUtils.now()
+                    if (endTime > startTime) {
+                        val result = repository.addBackfillRecord(eventId, startTime, endTime)
+                        _toastMessage.value = when (result) {
+                            is RecordActionResult.BackfillCreated ->
+                                "已无缝补录 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
+                            is RecordActionResult.BackfillMerged ->
+                                "已合并延长 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
+                            else -> null
+                        }
+                    } else {
+                        repository.startEvent(eventId)
+                    }
+                }
+                RecordMode.Clone -> {
+                    val result = repository.addCloneRecord(eventId)
+                    _toastMessage.value = when (result) {
+                        is RecordActionResult.CloneCreated ->
+                            "已克隆 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
+                        is RecordActionResult.CloneMerged ->
+                            "已扩展克隆 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
+                        else -> "暂无可用已完成记录"
+                    }
+                }
+            }
+        }
     }
 
     fun startEvent(eventId: String) {
