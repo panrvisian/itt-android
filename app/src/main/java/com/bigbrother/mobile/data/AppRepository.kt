@@ -25,6 +25,7 @@ sealed interface RecordActionResult {
     data class BackfillMerged(val eventName: String, val newEndTime: Long) : RecordActionResult
     data class CloneCreated(val eventName: String, val startTime: Long, val endTime: Long) : RecordActionResult
     data class CloneMerged(val eventName: String, val newEndTime: Long) : RecordActionResult
+    data class IgnoredShortRecord(val eventName: String) : RecordActionResult
 }
 
 class AppRepository(
@@ -299,25 +300,45 @@ class AppRepository(
         cloned.id
     }.also { requestWidgetRefresh() }
 
-    suspend fun endRecord(recordId: String): Boolean = database.withTransaction {
-        val record = recordsDao.getById(recordId) ?: return@withTransaction false
-        if (record.endTime != null) return@withTransaction true
-        recordsDao.end(recordId, System.currentTimeMillis())
-        normalizeOvernightInTransaction()
-        true
+    suspend fun endRecord(recordId: String): RecordActionResult? = database.withTransaction {
+        val record = recordsDao.getById(recordId) ?: return@withTransaction null
+        if (record.endTime != null) return@withTransaction null
+
+        val now = System.currentTimeMillis()
+        val durationMs = now - record.startTime
+        if (durationMs < 60_000L) {
+            recordsDao.deleteById(recordId)
+            RecordActionResult.IgnoredShortRecord(record.eventNameSnapshot)
+        } else {
+            recordsDao.end(recordId, now)
+            normalizeOvernightInTransaction()
+            null
+        }
     }.also { requestWidgetRefresh() }
 
-    suspend fun endAllRunningRecords(): Int = database.withTransaction {
+    suspend fun endAllRunningRecords(): RecordActionResult? = database.withTransaction {
         val running = recordsDao.getRunningOnce()
-        if (running.isEmpty()) return@withTransaction 0
+        if (running.isEmpty()) return@withTransaction null
 
-        val commonEndTime = System.currentTimeMillis()
-        recordsDao.endAllRunning(commonEndTime)
-        normalizeOvernightInTransaction(
-            now = commonEndTime,
-            sourceRecords = running.map { it.copy(endTime = commonEndTime) }
-        )
-        running.size
+        val now = System.currentTimeMillis()
+        val (shortRecords, validRecords) = running.partition { now - it.startTime < 60_000L }
+
+        shortRecords.forEach { recordsDao.deleteById(it.id) }
+        validRecords.forEach { recordsDao.end(it.id, now) }
+
+        if (validRecords.isNotEmpty()) {
+            normalizeOvernightInTransaction(
+                now = now,
+                sourceRecords = validRecords.map { it.copy(endTime = now) }
+            )
+        }
+
+        if (shortRecords.isNotEmpty()) {
+            val name = if (shortRecords.size == 1) shortRecords.first().eventNameSnapshot else "短耗时"
+            RecordActionResult.IgnoredShortRecord(name)
+        } else {
+            null
+        }
     }.also { requestWidgetRefresh() }
 
     suspend fun deleteRunningRecord(recordId: String): Boolean = database.withTransaction {

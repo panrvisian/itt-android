@@ -239,11 +239,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun endRecord(recordId: String) {
-        viewModelScope.launch { repository.endRecord(recordId) }
+        viewModelScope.launch {
+            val result = repository.endRecord(recordId)
+            if (result is RecordActionResult.IgnoredShortRecord) {
+                _toastMessage.value = "记录不足 1 分钟，已忽略 “${result.eventName}”"
+            }
+        }
     }
 
     fun endAllRunningRecords() {
-        viewModelScope.launch { repository.endAllRunningRecords() }
+        viewModelScope.launch {
+            val result = repository.endAllRunningRecords()
+            if (result is RecordActionResult.IgnoredShortRecord) {
+                _toastMessage.value = "记录不足 1 分钟，已忽略 “${result.eventName}”"
+            }
+        }
     }
 
     fun deleteRunningRecord(recordId: String) {
