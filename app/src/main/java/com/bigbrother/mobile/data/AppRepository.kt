@@ -16,6 +16,7 @@ import java.time.ZoneId
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import kotlin.math.abs
 
 data class NoteEditorState(val text: String, val imageNames: List<String>)
 data class NoteViewState(val text: String, val imageNames: List<String>)
@@ -515,10 +516,45 @@ class AppRepository(
 
     // ---------- Notes ----------
 
+    private suspend fun getOvernightChainRecords(record: RecordEntity): List<RecordEntity> {
+        val allRecords = recordsDao.getAllOnce()
+            .filter { it.eventId == record.eventId && it.groupIdSnapshot == record.groupIdSnapshot }
+            .sortedBy { it.startTime }
+
+        val targetIndex = allRecords.indexOfFirst { it.id == record.id }
+        if (targetIndex < 0) return listOf(record)
+
+        var startIdx = targetIndex
+        while (startIdx > 0) {
+            val prev = allRecords[startIdx - 1]
+            val curr = allRecords[startIdx]
+            if (curr.isContinuation && prev.endTime != null && abs(prev.endTime - curr.startTime) <= 60_000L) {
+                startIdx--
+            } else {
+                break
+            }
+        }
+
+        var endIdx = targetIndex
+        while (endIdx < allRecords.lastIndex) {
+            val curr = allRecords[endIdx]
+            val next = allRecords[endIdx + 1]
+            if (next.isContinuation && curr.endTime != null && abs(curr.endTime - next.startTime) <= 60_000L) {
+                endIdx++
+            } else {
+                break
+            }
+        }
+
+        return allRecords.subList(startIdx, endIdx + 1)
+    }
+
     suspend fun loadNoteView(recordId: String): NoteViewState {
-        val record = recordsDao.getById(recordId)
-        val images = noteImagesDao.getByRecord(recordId).map { it.fileName }
-        return NoteViewState(text = record?.noteText ?: "", imageNames = images)
+        val record = recordsDao.getById(recordId) ?: return NoteViewState("", emptyList())
+        val chain = getOvernightChainRecords(record)
+        val rootSegment = chain.first()
+        val images = noteImagesDao.getByRecord(rootSegment.id).map { it.fileName }
+        return NoteViewState(text = record.noteText, imageNames = images)
     }
 
     suspend fun loadNoteEditor(recordId: String): NoteEditorState {
@@ -528,19 +564,21 @@ class AppRepository(
                 imageNames = noteDraftStore.loadImages(recordId)
             )
         }
-        val record = recordsDao.getById(recordId)
-        val savedImages = noteImagesDao.getByRecord(recordId)
+        val record = recordsDao.getById(recordId) ?: return NoteEditorState("", emptyList())
+        val chain = getOvernightChainRecords(record)
+        val rootSegment = chain.first()
+        val savedImages = noteImagesDao.getByRecord(rootSegment.id)
         val draftDir = draftDirFor(recordId)
         draftDir.mkdirs()
         savedImages.forEach { image ->
-            val src = noteImageFile(recordId, image.fileName)
+            val src = noteImageFile(rootSegment.id, image.fileName)
             val dst = File(draftDir, image.fileName)
             if (src.exists() && !dst.exists()) {
                 runCatching { src.copyTo(dst, overwrite = true) }
             }
         }
         val names = savedImages.map { it.fileName }
-        val text = record?.noteText ?: ""
+        val text = record.noteText
         noteDraftStore.save(recordId, text, names)
         return NoteEditorState(text = text, imageNames = names)
     }
@@ -568,22 +606,34 @@ class AppRepository(
     }
 
     suspend fun saveNote(recordId: String, text: String, imageNames: List<String>) = database.withTransaction {
-        recordsDao.getById(recordId) ?: return@withTransaction
-        recordsDao.updateNoteText(recordId, text)
-        val notesDir = notesDirFor(recordId)
+        val targetRecord = recordsDao.getById(recordId) ?: return@withTransaction
+        val chain = getOvernightChainRecords(targetRecord)
+
+        chain.forEach { segment ->
+            recordsDao.updateNoteText(segment.id, text)
+        }
+
+        val rootSegment = chain.first()
+        val notesDir = notesDirFor(rootSegment.id)
         runCatching { notesDir.deleteRecursively() }
         notesDir.mkdirs()
-        noteImagesDao.deleteByRecord(recordId)
+        noteImagesDao.deleteByRecord(rootSegment.id)
+
+        chain.drop(1).forEach { seg ->
+            noteImagesDao.deleteByRecord(seg.id)
+            runCatching { notesDirFor(seg.id).deleteRecursively() }
+        }
+
         val draftDir = draftDirFor(recordId)
         imageNames.forEachIndexed { index, name ->
             val src = File(draftDir, name)
             val dst = File(notesDir, name)
             if (src.exists()) runCatching { src.copyTo(dst, overwrite = true) }
-            noteImagesDao.insert(NoteImageEntity(recordId = recordId, fileName = name, sortOrder = index))
+            noteImagesDao.insert(NoteImageEntity(recordId = rootSegment.id, fileName = name, sortOrder = index))
         }
         noteDraftStore.clear(recordId)
         runCatching { draftDir.deleteRecursively() }
-    }
+    }.also { requestWidgetRefresh() }
 
     suspend fun cleanupNoteDrafts(now: Long = System.currentTimeMillis()) {
         val oneDay = 24L * 60L * 60L * 1000L
