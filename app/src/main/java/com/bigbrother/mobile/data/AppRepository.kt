@@ -161,8 +161,14 @@ class AppRepository(
             .filter { it.eventId == eventId && it.endTime == null }
             .maxByOrNull { it.startTime }
         if (running != null) {
-            recordsDao.end(running.id, System.currentTimeMillis())
-            normalizeOvernightInTransaction()
+            val now = System.currentTimeMillis()
+            val durationMs = now - running.startTime
+            if (durationMs < 60_000L) {
+                recordsDao.deleteById(running.id)
+            } else {
+                recordsDao.end(running.id, now)
+                normalizeOvernightInTransaction()
+            }
             false
         } else {
             val event = eventsDao.getById(eventId) ?: return@withTransaction false
