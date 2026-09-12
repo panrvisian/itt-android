@@ -13,13 +13,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GroupDao {
-    @Query("SELECT * FROM groups ORDER BY CASE WHEN isSystem = 1 THEN 0 ELSE 1 END, sortOrder, name COLLATE NOCASE")
+    @Query("SELECT * FROM `groups` ORDER BY CASE WHEN isSystem = 1 THEN 0 ELSE 1 END, sortOrder, name COLLATE NOCASE")
     fun observeAll(): Flow<List<GroupEntity>>
 
-    @Query("SELECT * FROM groups")
+    @Query("SELECT * FROM `groups`")
     suspend fun getAllOnce(): List<GroupEntity>
 
-    @Query("SELECT * FROM groups WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM `groups` WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): GroupEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -28,19 +28,19 @@ interface GroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(list: List<GroupEntity>)
 
-    @Query("UPDATE groups SET name = :name WHERE id = :id")
+    @Query("UPDATE `groups` SET name = :name WHERE id = :id")
     suspend fun rename(id: String, name: String)
 
-    @Query("UPDATE groups SET colorArgb = :color WHERE id = :id")
+    @Query("UPDATE `groups` SET colorArgb = :color WHERE id = :id")
     suspend fun updateColor(id: String, color: Int)
 
-    @Query("UPDATE groups SET isDeleted = :deleted WHERE id = :id")
+    @Query("UPDATE `groups` SET isDeleted = :deleted WHERE id = :id")
     suspend fun setDeleted(id: String, deleted: Boolean)
 
-    @Query("UPDATE groups SET sortOrder = :sortOrder WHERE id = :id")
+    @Query("UPDATE `groups` SET sortOrder = :sortOrder WHERE id = :id")
     suspend fun updateSortOrder(id: String, sortOrder: Int)
 
-    @Query("DELETE FROM groups")
+    @Query("DELETE FROM `groups`")
     suspend fun deleteAll()
 
     @Delete
@@ -49,13 +49,13 @@ interface GroupDao {
 
 @Dao
 interface EventDao {
-    @Query("SELECT * FROM events ORDER BY isDeleted, isFavorite DESC, sortOrder, name COLLATE NOCASE")
+    @Query("SELECT * FROM `events` ORDER BY isDeleted, isFavorite DESC, sortOrder, name COLLATE NOCASE")
     fun observeAll(): Flow<List<EventEntity>>
 
-    @Query("SELECT * FROM events")
+    @Query("SELECT * FROM `events`")
     suspend fun getAllOnce(): List<EventEntity>
 
-    @Query("SELECT * FROM events WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM `events` WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): EventEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -64,19 +64,19 @@ interface EventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(list: List<EventEntity>)
 
-    @Query("UPDATE events SET name = :name WHERE id = :id")
+    @Query("UPDATE `events` SET name = :name WHERE id = :id")
     suspend fun rename(id: String, name: String)
 
-    @Query("UPDATE events SET groupId = :groupId WHERE id = :id")
+    @Query("UPDATE `events` SET groupId = :groupId WHERE id = :id")
     suspend fun move(id: String, groupId: String)
 
-    @Query("UPDATE events SET isFavorite = :favorite WHERE id = :id")
+    @Query("UPDATE `events` SET isFavorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
 
-    @Query("UPDATE events SET isDeleted = :deleted WHERE id = :id")
+    @Query("UPDATE `events` SET isDeleted = :deleted WHERE id = :id")
     suspend fun setDeleted(id: String, deleted: Boolean)
 
-    @Query("DELETE FROM events")
+    @Query("DELETE FROM `events`")
     suspend fun deleteAll()
 
     @Delete
@@ -85,22 +85,22 @@ interface EventDao {
 
 @Dao
 interface RecordDao {
-    @Query("SELECT * FROM records ORDER BY startTime DESC")
+    @Query("SELECT * FROM `records` ORDER BY startTime DESC")
     fun observeAll(): Flow<List<RecordEntity>>
 
-    @Query("SELECT * FROM records")
+    @Query("SELECT * FROM `records`")
     suspend fun getAllOnce(): List<RecordEntity>
 
-    @Query("SELECT * FROM records WHERE endTime IS NULL ORDER BY startTime")
+    @Query("SELECT * FROM `records` WHERE endTime IS NULL ORDER BY startTime")
     suspend fun getRunningOnce(): List<RecordEntity>
 
-    @Query("SELECT * FROM records WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM `records` WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): RecordEntity?
 
-    @Query("SELECT COUNT(*) FROM records WHERE eventId = :eventId AND endTime IS NULL")
+    @Query("SELECT COUNT(*) FROM `records` WHERE eventId = :eventId AND endTime IS NULL")
     suspend fun countRunningByEvent(eventId: String): Int
 
-    @Query("SELECT COUNT(*) FROM records WHERE groupIdSnapshot = :groupId AND endTime IS NULL")
+    @Query("SELECT COUNT(*) FROM `records` WHERE groupIdSnapshot = :groupId AND endTime IS NULL")
     suspend fun countRunningByGroup(groupId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -109,43 +109,43 @@ interface RecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(list: List<RecordEntity>)
 
-    @Query("UPDATE records SET endTime = :endTime WHERE id = :id")
+    @Query("UPDATE `records` SET endTime = :endTime WHERE id = :id")
     suspend fun end(id: String, endTime: Long)
 
-    @Query("UPDATE records SET endTime = :endTime WHERE endTime IS NULL")
+    @Query("UPDATE `records` SET endTime = :endTime WHERE endTime IS NULL")
     suspend fun endAllRunning(endTime: Long): Int
 
-    @Query("UPDATE records SET noteText = :noteText WHERE id = :id")
+    @Query("UPDATE `records` SET noteText = :noteText WHERE id = :id")
     suspend fun updateNoteText(id: String, noteText: String)
 
-    @Query("UPDATE records SET eventNameSnapshot = :name WHERE eventId = :eventId")
+    @Query("UPDATE `records` SET eventNameSnapshot = :name WHERE eventId = :eventId")
     suspend fun syncEventName(eventId: String, name: String)
 
-    @Query("UPDATE records SET groupNameSnapshot = :name WHERE groupIdSnapshot = :groupId")
+    @Query("UPDATE `records` SET groupNameSnapshot = :name WHERE groupIdSnapshot = :groupId")
     suspend fun syncGroupName(groupId: String, name: String)
 
-    @Query("UPDATE records SET groupColorArgbSnapshot = :color WHERE groupIdSnapshot = :groupId")
+    @Query("UPDATE `records` SET groupColorArgbSnapshot = :color WHERE groupIdSnapshot = :groupId")
     suspend fun syncGroupColor(groupId: String, color: Int)
 
-    @Query("UPDATE records SET groupIdSnapshot = :groupId, groupNameSnapshot = :groupName, groupColorArgbSnapshot = :groupColor WHERE eventId = :eventId")
+    @Query("UPDATE `records` SET groupIdSnapshot = :groupId, groupNameSnapshot = :groupName, groupColorArgbSnapshot = :groupColor WHERE eventId = :eventId")
     suspend fun syncEventGroup(eventId: String, groupId: String, groupName: String, groupColor: Int)
 
-    @Query("DELETE FROM records WHERE id = :id")
+    @Query("DELETE FROM `records` WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    @Query("DELETE FROM records")
+    @Query("DELETE FROM `records`")
     suspend fun deleteAll()
 }
 
 @Dao
 interface NoteImageDao {
-    @Query("SELECT * FROM note_images ORDER BY recordId, sortOrder, fileName")
+    @Query("SELECT * FROM `note_images` ORDER BY recordId, sortOrder, fileName")
     fun observeAll(): Flow<List<NoteImageEntity>>
 
-    @Query("SELECT * FROM note_images WHERE recordId = :recordId ORDER BY sortOrder, fileName")
+    @Query("SELECT * FROM `note_images` WHERE recordId = :recordId ORDER BY sortOrder, fileName")
     suspend fun getByRecord(recordId: String): List<NoteImageEntity>
 
-    @Query("SELECT * FROM note_images")
+    @Query("SELECT * FROM `note_images`")
     suspend fun getAllOnce(): List<NoteImageEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -154,10 +154,10 @@ interface NoteImageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(list: List<NoteImageEntity>)
 
-    @Query("DELETE FROM note_images WHERE recordId = :recordId")
+    @Query("DELETE FROM `note_images` WHERE recordId = :recordId")
     suspend fun deleteByRecord(recordId: String)
 
-    @Query("DELETE FROM note_images")
+    @Query("DELETE FROM `note_images`")
     suspend fun deleteAll()
 }
 
