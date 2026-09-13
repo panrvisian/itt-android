@@ -36,8 +36,7 @@ import java.time.LocalDate
 
 enum class RecordMode {
     Realtime,
-    Backfill,
-    Clone
+    Backfill
 }
 
 enum class AppTab {
@@ -106,8 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cycleRecordMode() {
         _recordMode.value = when (_recordMode.value) {
             RecordMode.Realtime -> RecordMode.Backfill
-            RecordMode.Backfill -> RecordMode.Clone
-            RecordMode.Clone -> RecordMode.Realtime
+            RecordMode.Backfill -> RecordMode.Realtime
         }
     }
 
@@ -210,16 +208,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     } else {
                         repository.startEvent(eventId)
-                    }
-                }
-                RecordMode.Clone -> {
-                    val result = repository.addCloneRecord(eventId)
-                    _toastMessage.value = when (result) {
-                        is RecordActionResult.CloneCreated ->
-                            "已克隆 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
-                        is RecordActionResult.CloneMerged ->
-                            "已扩展克隆 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
-                        else -> "暂无可用已完成记录"
                     }
                 }
             }

@@ -1270,7 +1270,6 @@ private fun HomeScreen(
                     settings = settings,
                     clockState = clockState,
                     recordMode = recordMode,
-                    onRecordModeCycle = viewModel::cycleRecordMode,
                     onRecordModeChange = viewModel::setRecordMode,
                     onEndAll = viewModel::endAllRunningRecords,
                     modifier = Modifier.onGloballyPositioned { coordinates ->
@@ -1440,71 +1439,29 @@ private fun HomeDashboardWidgets(
     settings: AppSettings,
     clockState: State<Long>,
     recordMode: RecordMode,
-    onRecordModeCycle: () -> Unit,
     onRecordModeChange: (RecordMode) -> Unit,
     onEndAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isWorking = running.isNotEmpty()
     val haptics = LocalHapticFeedback.current
     val componentAlpha = LocalComponentAlpha.current
-    val isDark = LocalIsDarkTheme.current
-
-    val (activeColor, statusLabel, modeDescription) = when (recordMode) {
-        RecordMode.Backfill -> Triple(Color(0xFFE53935), "补录", "填满上一结束时间至此刻\n(同事件长按自动合并)")
-        RecordMode.Clone -> Triple(Color(0xFFFBC02D), "克隆", "复制上一已完成记录时间段\n(同事件长按自动合并)")
-        RecordMode.Realtime -> Triple(Color(0xFF43A047), "实时", "即时开启走秒与计时\n(再次长按即刻结束)")
-    }
-
-    var targetRotation by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(recordMode) {
-        val modeIndex = when (recordMode) {
-            RecordMode.Backfill -> 0
-            RecordMode.Clone -> 1
-            RecordMode.Realtime -> 2
-        }
-        val currentModIndex = ((targetRotation / 120f).roundToInt() % 3 + 3) % 3
-        var diff = modeIndex - currentModIndex
-        if (diff <= 0) diff += 3
-        if (targetRotation != 0f || modeIndex != 0) {
-            targetRotation += diff * 120f
-        }
-    }
-
-    val animatedRotation by animateFloatAsState(
-        targetValue = targetRotation,
-        animationSpec = tween(
-            durationMillis = 350,
-            easing = FastOutSlowInEasing
-        ),
-        label = "triStateRotation"
-    )
-
-    val strokeColor = if (isDark) {
-        when (recordMode) {
-            RecordMode.Backfill -> Color(0xFF880E4F)
-            RecordMode.Clone -> Color(0xFFE65100)
-            RecordMode.Realtime -> Color(0xFF1B5E20)
-        }
+    val rawStatusColor = if (isWorking) {
+        MaterialTheme.colorScheme.primaryContainer
     } else {
-        when (recordMode) {
-            RecordMode.Backfill -> Color(0xFFFFCDD2)
-            RecordMode.Clone -> Color(0xFFFFF9C4)
-            RecordMode.Realtime -> Color(0xFFC8E6C9)
-        }
+        MaterialTheme.colorScheme.surfaceContainerLow
     }
-
-    val trackColor = if (isDark) {
-        Color(0xFF1E3A5F)
+    val statusCardColor = rawStatusColor.copy(alpha = (rawStatusColor.alpha * componentAlpha).coerceIn(0f, 1f))
+    val statusContentColor = if (isWorking) {
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
-        Color(0xFFA2C8F5)
+        MaterialTheme.colorScheme.onSurface
     }
-
-    val animatedCardBg by animateColorAsState(
-        targetValue = activeColor.copy(alpha = (0.38f * componentAlpha).coerceIn(0.18f, 1f)),
-        animationSpec = tween(300),
-        label = "triStateCardBg"
-    )
-
+    val statusIndicatorColor = if (isWorking) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    }
     val cardBgColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
         alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * componentAlpha).coerceIn(0f, 1f)
     )
@@ -1518,95 +1475,80 @@ private fun HomeDashboardWidgets(
             horizontalArrangement = Arrangement.spacedBy(dashboardGap)
         ) {
             MiuixCard(
-                modifier = Modifier
-                    .size(statusCardSize)
-                    .border(BorderStroke(1.dp, activeColor.copy(alpha = if (isDark) 0.5f else 0.35f)), shape = RoundedCornerShape(22.dp)),
+                modifier = Modifier.size(statusCardSize),
                 cornerRadius = 22.dp,
                 colors = MiuixCardDefaults.defaultColors(
-                    color = animatedCardBg,
-                    contentColor = MaterialTheme.colorScheme.onSurface
+                    color = statusCardColor,
+                    contentColor = statusContentColor
                 )
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(22.dp))
-                        .clickable {
-                            if (settings.vibrationEnabled) {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        .then(
+                            if (isWorking) {
+                                Modifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = {
+                                        if (settings.vibrationEnabled) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        onEndAll()
+                                    }
+                                )
+                            } else {
+                                Modifier
                             }
-                            onRecordModeCycle()
-                        }
+                        )
                 ) {
                     Canvas(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .size(132.dp)
+                            .align(Alignment.BottomEnd)
+                            .graphicsLayer {
+                                translationX = 28.dp.toPx()
+                                translationY = 24.dp.toPx()
+                            }
                     ) {
-                        val cx = size.width / 2f
-                        val cy = size.height / 2f
-                        val radius = size.minDimension / 2f - 22.dp.toPx()
-                        val trackStroke = 4.dp.toPx()
-
-                        // Circular Track (Deep Dark Blue in Dark mode, Light Blue in Light mode)
+                        val ringStroke = 12.dp.toPx()
                         drawCircle(
-                            color = trackColor,
-                            radius = radius,
-                            style = Stroke(width = trackStroke)
+                            color = statusIndicatorColor,
+                            radius = size.minDimension / 2f - ringStroke / 2f,
+                            style = Stroke(width = ringStroke)
                         )
-
-                        // 3 Dots: Backfill Red (0°), Clone Yellow (240°), Realtime Green (120°)
-                        val dots = listOf(
-                            RecordMode.Backfill to 0.0,
-                            RecordMode.Clone to 240.0,
-                            RecordMode.Realtime to 120.0
-                        )
-
-                        dots.forEach { (mode, baseAngleDeg) ->
-                            val dotColor = when (mode) {
-                                RecordMode.Backfill -> Color(0xFFE53935)
-                                RecordMode.Clone -> Color(0xFFFBC02D)
-                                RecordMode.Realtime -> Color(0xFF43A047)
+                        if (isWorking) {
+                            val checkPath = Path().apply {
+                                moveTo(size.width * 0.28f, size.height * 0.51f)
+                                lineTo(size.width * 0.46f, size.height * 0.68f)
+                                lineTo(size.width * 0.76f, size.height * 0.34f)
                             }
-                            val isActive = mode == recordMode
-                            val currentAngleRad = Math.toRadians(baseAngleDeg + animatedRotation.toDouble())
-                            val dx = (cx + radius * Math.cos(currentAngleRad)).toFloat()
-                            val dy = (cy + radius * Math.sin(currentAngleRad)).toFloat()
-                            val dotRadius = if (isActive) 11.dp.toPx() else 7.dp.toPx()
-
-                            if (isActive) {
-                                drawCircle(
-                                    color = strokeColor,
-                                    radius = dotRadius + 3.dp.toPx(),
-                                    center = Offset(dx, dy)
+                            drawPath(
+                                path = checkPath,
+                                color = statusIndicatorColor,
+                                style = Stroke(
+                                    width = 13.dp.toPx(),
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
                                 )
-                            }
-                            drawCircle(
-                                color = dotColor,
-                                radius = dotRadius,
-                                center = Offset(dx, dy)
                             )
                         }
-
-                        // Fixed Triangle Pointer flush with Card Outer Right Border (size.width)
-                        val pointerPath = Path().apply {
-                            val rightX = size.width
-                            val pointerDepth = 12.dp.toPx()
-                            val pointerHalfHeight = 9.dp.toPx()
-
-                            moveTo(rightX, cy - pointerHalfHeight)
-                            lineTo(rightX - pointerDepth, cy)
-                            lineTo(rightX, cy + pointerHalfHeight)
-                            close()
-                        }
-                        drawPath(path = pointerPath, color = activeColor)
                     }
 
-                    // Center Character Label ("补录" / "克隆" / "实时")
                     Text(
-                        text = statusLabel,
-                        modifier = Modifier.align(Alignment.Center),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "当前",
+                        modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = statusContentColor.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = if (isWorking) "工作中" else "空闲",
+                        modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = activeColor
+                        color = statusContentColor,
+                        maxLines = 1
                     )
                 }
             }
@@ -1626,39 +1568,21 @@ private fun HomeDashboardWidgets(
                     )
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable {
-                                if (settings.vibrationEnabled) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                }
-                                onRecordModeCycle()
-                            }
-                            .padding(12.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "记录模式",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = statusLabel,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = activeColor
-                            )
-                        }
                         Text(
-                            text = modeDescription,
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "记录模式",
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 3
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                        KernelSegmentedControl(
+                            labels = listOf("实时", "补录"),
+                            selectedIndex = if (recordMode == RecordMode.Realtime) 0 else 1,
+                            onSelected = { index ->
+                                onRecordModeChange(if (index == 0) RecordMode.Realtime else RecordMode.Backfill)
+                            }
                         )
                     }
                 }
