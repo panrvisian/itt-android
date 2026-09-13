@@ -277,6 +277,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setLiquidGlassBottomBarEnabled(enabled: Boolean) {
+        if (enabled) {
+            _toastMessage.value = "开启液态玻璃高阶渲染可能会增加耗电"
+        }
         viewModelScope.launch { repository.setSettings { it.copy(liquidGlassBottomBarEnabled = enabled) } }
     }
 
@@ -373,14 +376,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setComponentAlpha(alpha: Float) {
+        val transparency = 1f - alpha
+        if (transparency > 0.4f) {
+            _toastMessage.value = "较高透明度需要更多 GPU 离屏渲染开销"
+        }
         viewModelScope.launch { repository.setSettings { it.copy(componentAlpha = alpha.coerceIn(0f, 1f)) } }
     }
 
     fun setGlassEffectEnabled(enabled: Boolean) {
+        if (enabled) {
+            _toastMessage.value = "开启实时壁纸模糊与玻璃材质可能会增加耗电"
+        }
         viewModelScope.launch { repository.setSettings { it.copy(glassEffectEnabled = enabled) } }
     }
 
     fun setWallpaperBlurRadius(radius: Float) {
+        if (radius > 10f) {
+            _toastMessage.value = "较高的高斯模糊半径可能会增加耗电"
+        }
         viewModelScope.launch { repository.setSettings { it.copy(wallpaperBlurRadius = radius.coerceIn(0f, 40f)) } }
     }
 

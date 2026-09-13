@@ -674,10 +674,10 @@ fun AppRoot(
                         toastMessage?.let { msg ->
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.inverseSurface,
-                                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
                                 shadowElevation = 8.dp,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
@@ -2846,7 +2846,6 @@ private fun AppearanceSettings(
             ThemeSwitchPreference(
                 title = "液态玻璃",
                 summary = if (settings.floatingBottomBarEnabled) "为悬浮底栏启用实时背景模糊和流体高光" else "请先开启悬浮底栏",
-                warning = if (settings.floatingBottomBarEnabled && settings.liquidGlassBottomBarEnabled) "⚠️ 开启高阶流体高光与实时模糊可能增加 GPU 渲染开销与耗电量" else null,
                 icon = Icons.Rounded.WaterDrop,
                 checked = settings.liquidGlassBottomBarEnabled,
                 enabled = settings.floatingBottomBarEnabled,
@@ -2927,19 +2926,9 @@ private fun AppearanceSettings(
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth()
             )
-            if (localTransparency > 0.4f) {
-                Text(
-                    text = "⚠️ 较高透明度需要更多的 GPU 离屏纹理渲染支持，可能增加耗电",
-                    color = Color(0xFFFFA726),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-            }
             ThemeSwitchPreference(
                 title = "背景玻璃效果",
                 summary = "模糊自定义壁纸并降低主要卡片的不透明度",
-                warning = if (settings.glassEffectEnabled) "⚠️ 开启实时壁纸模糊与玻璃材质特效可能带来微卡风险与增加电池消耗" else null,
                 icon = Icons.Rounded.BlurOn,
                 checked = settings.glassEffectEnabled,
                 onCheckedChange = viewModel::setGlassEffectEnabled
@@ -2954,15 +2943,6 @@ private fun AppearanceSettings(
                 enabled = settings.glassEffectEnabled,
                 modifier = Modifier.fillMaxWidth()
             )
-            if (settings.glassEffectEnabled && localBlurPercent > 0.25f) {
-                Text(
-                    text = "⚠️ 较高的高斯模糊半径需要更多的 GPU 算力支持，可能导致微卡与增加耗电",
-                    color = Color(0xFFFFA726),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-            }
             Text("开启后使用半透明界面和背景模糊效果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -3211,7 +3191,6 @@ private fun ThemeSwitchPreference(
     icon: ImageVector,
     checked: Boolean,
     enabled: Boolean = true,
-    warning: String? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -3225,15 +3204,6 @@ private fun ThemeSwitchPreference(
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            if (!warning.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = warning,
-                    color = Color(0xFFFFA726),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         AdaptiveSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
