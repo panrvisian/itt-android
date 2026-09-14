@@ -95,7 +95,6 @@ fun MiuixCalendarHeader(
     onDateSelected: (LocalDate) -> Unit,
     semesterStart: LocalDate? = null,
     semesterEnd: LocalDate? = null,
-    onExportClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
@@ -173,36 +172,18 @@ fun MiuixCalendarHeader(
                 .fillMaxWidth()
                 .height(52.dp)
         ) {
-            Row(
+            MiuixLiquidGlassCapsuleButton(
+                text = currentLabel,
                 modifier = Modifier.align(Alignment.CenterStart),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                MiuixLiquidGlassCapsuleButton(
-                    text = currentLabel,
-                    onClick = {
-                        when (mode) {
-                            CalendarHeaderMode.Day -> onDateSelected(today)
-                            CalendarHeaderMode.Week -> onDateSelected(today)
-                            CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
-                            CalendarHeaderMode.Semester -> Unit
-                        }
-                    }
-                )
-                if (onExportClick != null) {
-                    MiuixLiquidGlassCapsuleButton(
-                        onClick = onExportClick,
-                        contentDescription = "导出日志"
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.IosShare,
-                            contentDescription = "导出",
-                            tint = MiuixTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp)
-                        )
+                onClick = {
+                    when (mode) {
+                        CalendarHeaderMode.Day -> onDateSelected(today)
+                        CalendarHeaderMode.Week -> onDateSelected(today)
+                        CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
+                        CalendarHeaderMode.Semester -> Unit
                     }
                 }
-            }
+            )
             Row(
                 modifier = Modifier
                     .align(Alignment.Center)

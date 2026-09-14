@@ -28,6 +28,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.TableChart
@@ -242,6 +243,7 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronForward as MiuixChevronForward
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.Duration
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
@@ -385,6 +387,25 @@ fun AppRoot(
     }
 
     val context = LocalContext.current
+    var exportRangeStartDate by remember { mutableStateOf(LocalDate.now()) }
+    var exportRangeEndDate by remember { mutableStateOf(LocalDate.now()) }
+
+    val createRangeCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportRangeCsv(exportRangeStartDate, exportRangeEndDate, uri)
+        }
+    }
+
+    val createRangeZipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportRangeZip(exportRangeStartDate, exportRangeEndDate, uri)
+        }
+    }
+
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) viewModel.exportCsv(uri)
     }
@@ -859,7 +880,17 @@ fun AppRoot(
                         SettingsPage.Statistics -> StatisticsSettings(settings = settings, viewModel = viewModel)
                         SettingsPage.Semester -> SemesterSettings(settings, viewModel) { showSemesterStartDialog = true }
                         SettingsPage.Data -> DataSettings(
-                            onExport = { exportLauncher.launch("big_brother_mobile.zip") },
+                            onExportFull = { exportLauncher.launch("big_brother_mobile.zip") },
+                            onExportRangeZip = { start, end, filename ->
+                                exportRangeStartDate = start
+                                exportRangeEndDate = end
+                                createRangeZipLauncher.launch(filename)
+                            },
+                            onExportRangeCsv = { start, end, filename ->
+                                exportRangeStartDate = start
+                                exportRangeEndDate = end
+                                createRangeCsvLauncher.launch(filename)
+                            },
                             onImportReplace = { importReplaceLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) },
                             onImportMerge = { importMergeLauncher.launch(arrayOf("application/zip", "text/csv", "text/*", "*/*")) }
                         )
@@ -2007,39 +2038,6 @@ private fun TimelineScreen(
     val listState = rememberLazyListState()
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
-    var showSingleDayExportDialog by remember { mutableStateOf(false) }
-
-    val createCsvLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.exportSingleDayCsv(day, uri)
-        }
-    }
-
-    val createZipLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.exportSingleDayZip(day, uri)
-        }
-    }
-
-    if (showSingleDayExportDialog) {
-        SingleDayExportDialog(
-            date = day,
-            onDismiss = { showSingleDayExportDialog = false },
-            onExportZip = {
-                showSingleDayExportDialog = false
-                createZipLauncher.launch("itt_export_$day.zip")
-            },
-            onExportCsv = {
-                showSingleDayExportDialog = false
-                createCsvLauncher.launch("itt_export_$day.csv")
-            }
-        )
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = day,
@@ -2047,7 +2045,6 @@ private fun TimelineScreen(
             expanded = calendarExpanded,
             onExpandedChange = { calendarExpanded = it },
             onDateSelected = viewModel::setTimelineDate,
-            onExportClick = { showSingleDayExportDialog = true },
             modifier = Modifier
                 .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
@@ -3337,20 +3334,178 @@ private fun SemesterSettings(
     }
 }
 
+enum class ExportRangeKind {
+    Day,
+    Week,
+    Month,
+    Custom
+}
+
 @Composable
 private fun DataSettings(
-    onExport: () -> Unit,
+    onExportFull: () -> Unit,
+    onExportRangeZip: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit,
+    onExportRangeCsv: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit,
     onImportReplace: () -> Unit,
     onImportMerge: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard(title = "导入 / 导出") {
+        SectionCard(title = "全量数据备份") {
+            Text("包含全历史记录、全量备注照片与所有应用设置", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                IconTextButton(text = "导出备份", iconRes = R.drawable.ic_export, onClick = onExport)
+                IconTextButton(text = "导出全量备份", iconRes = R.drawable.ic_export, onClick = onExportFull)
                 IconTextButton(text = "导入覆盖", iconRes = R.drawable.ic_import, onClick = onImportReplace)
             }
             Spacer(modifier = Modifier.height(8.dp))
             IconTextButton(text = "导入合并", iconRes = R.drawable.ic_import, onClick = onImportMerge)
+        }
+
+        RangeExportSectionCard(
+            onExportZip = onExportRangeZip,
+            onExportCsv = onExportRangeCsv
+        )
+    }
+}
+
+@Composable
+private fun RangeExportSectionCard(
+    onExportZip: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit,
+    onExportCsv: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit
+) {
+    var rangeKind by rememberSaveable { mutableStateOf(ExportRangeKind.Day) }
+    var selectedDate by rememberSaveable { mutableStateOf(LocalDate.now()) }
+    var customStartDate by rememberSaveable { mutableStateOf(LocalDate.now().minusDays(7)) }
+    var customEndDate by rememberSaveable { mutableStateOf(LocalDate.now()) }
+    var calendarExpanded by rememberSaveable { mutableStateOf(false) }
+
+    val (startDate, endDate, filenameLabel) = remember(rangeKind, selectedDate, customStartDate, customEndDate) {
+        when (rangeKind) {
+            ExportRangeKind.Day -> Triple(selectedDate, selectedDate, "itt_export_$selectedDate")
+            ExportRangeKind.Week -> {
+                val weekStart = selectedDate.with(DayOfWeek.MONDAY)
+                val weekEnd = selectedDate.with(DayOfWeek.SUNDAY)
+                Triple(weekStart, weekEnd, "itt_export_week_$weekStart")
+            }
+            ExportRangeKind.Month -> {
+                val monthStart = selectedDate.withDayOfMonth(1)
+                val monthEnd = selectedDate.withDayOfMonth(selectedDate.lengthOfMonth())
+                Triple(monthStart, monthEnd, "itt_export_month_${selectedDate.year}_${selectedDate.monthValue}")
+            }
+            ExportRangeKind.Custom -> {
+                val start = if (customStartDate.isAfter(customEndDate)) customEndDate else customStartDate
+                val end = if (customEndDate.isBefore(customStartDate)) customStartDate else customEndDate
+                Triple(start, end, "itt_export_${start}_to_$end")
+            }
+        }
+    }
+
+    SectionCard(title = "按时间段导出日志") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("按指定时间范围导出记录数据与对应备注照片", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            KernelSegmentedControl(
+                labels = listOf("单日", "单周", "单月", "自定义"),
+                selectedIndex = when (rangeKind) {
+                    ExportRangeKind.Day -> 0
+                    ExportRangeKind.Week -> 1
+                    ExportRangeKind.Month -> 2
+                    ExportRangeKind.Custom -> 3
+                },
+                onSelected = { index ->
+                    rangeKind = when (index) {
+                        0 -> ExportRangeKind.Day
+                        1 -> ExportRangeKind.Week
+                        2 -> ExportRangeKind.Month
+                        else -> ExportRangeKind.Custom
+                    }
+                    calendarExpanded = false
+                }
+            )
+
+            if (rangeKind == ExportRangeKind.Custom) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        onClick = { calendarExpanded = !calendarExpanded },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("起始日期", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(customStartDate.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text("至", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        onClick = { calendarExpanded = !calendarExpanded },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("结束日期", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(customEndDate.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                val headerMode = when (rangeKind) {
+                    ExportRangeKind.Day -> CalendarHeaderMode.Day
+                    ExportRangeKind.Week -> CalendarHeaderMode.Week
+                    ExportRangeKind.Month -> CalendarHeaderMode.Month
+                    else -> CalendarHeaderMode.Day
+                }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                        MiuixCalendarHeader(
+                            selectedDate = selectedDate,
+                            mode = headerMode,
+                            expanded = calendarExpanded,
+                            onExpandedChange = { calendarExpanded = it },
+                            onDateSelected = { date ->
+                                selectedDate = date
+                            }
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = "导出时间区间：$startDate 至 $endDate",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onExportZip(startDate, endDate, "$filenameLabel.zip") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("导出 ZIP (含照片)", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+
+                OutlinedButton(
+                    onClick = { onExportCsv(startDate, endDate, "$filenameLabel.csv") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("导出纯 CSV", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }
@@ -5184,108 +5339,7 @@ private fun TimelineRecordBlock(
     }
 }
 
-@Composable
-private fun SingleDayExportDialog(
-    date: LocalDate,
-    onDismiss: () -> Unit,
-    onExportZip: () -> Unit,
-    onExportCsv: () -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-        ) {
-            Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "导出单日日志",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = date.toString(),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
 
-                Text(
-                    text = "请选择导出的格式：",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Surface(
-                    onClick = onExportZip,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FolderZip,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("ZIP 压缩包格式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("包含单日 CSV 数据表与当天备注照片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                Surface(
-                    onClick = onExportCsv,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.TableChart,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("纯 CSV 表格格式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("仅包含单日 CSV 数据表，不含照片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("取消")
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 internal fun SimpleDialog(

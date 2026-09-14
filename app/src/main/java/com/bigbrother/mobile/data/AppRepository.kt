@@ -436,35 +436,38 @@ class AppRepository(
         noteImages = noteImagesDao.getAllOnce()
     )
 
-    suspend fun buildSingleDayBundle(date: LocalDate): AppBundle = withContext(Dispatchers.IO) {
+    suspend fun buildRangeBundle(startDate: LocalDate, endDate: LocalDate): AppBundle = withContext(Dispatchers.IO) {
         val allGroups = groupsDao.getAllOnce()
         val allEvents = eventsDao.getAllOnce()
-        val dayRecords = recordsDao.getAllOnce()
-            .filter { TimeUtils.toLocalDate(it.startTime) == date }
+        val rangeRecords = recordsDao.getAllOnce()
+            .filter {
+                val d = TimeUtils.toLocalDate(it.startTime)
+                !d.isBefore(startDate) && !d.isAfter(endDate)
+            }
             .sortedBy { it.startTime }
-        val recordIds = dayRecords.mapTo(mutableSetOf()) { it.id }
-        val dayImages = noteImagesDao.getAllOnce()
+        val recordIds = rangeRecords.mapTo(mutableSetOf()) { it.id }
+        val rangeImages = noteImagesDao.getAllOnce()
             .filter { it.recordId in recordIds }
 
         AppBundle(
             settings = settings.first(),
             groups = allGroups,
             events = allEvents,
-            records = dayRecords,
-            noteImages = dayImages
+            records = rangeRecords,
+            noteImages = rangeImages
         )
     }
 
-    suspend fun exportSingleDayCsv(date: LocalDate, uri: Uri) = withContext(Dispatchers.IO) {
-        val bundle = buildSingleDayBundle(date)
+    suspend fun exportRangeCsv(startDate: LocalDate, endDate: LocalDate, uri: Uri) = withContext(Dispatchers.IO) {
+        val bundle = buildRangeBundle(startDate, endDate)
         val csvText = CsvCodec.export(bundle)
         context.contentResolver.openOutputStream(uri)?.use { output ->
             output.write(csvText.toByteArray(Charsets.UTF_8))
         }
     }
 
-    suspend fun exportSingleDayZip(date: LocalDate, uri: Uri) = withContext(Dispatchers.IO) {
-        val bundle = buildSingleDayBundle(date)
+    suspend fun exportRangeZip(startDate: LocalDate, endDate: LocalDate, uri: Uri) = withContext(Dispatchers.IO) {
+        val bundle = buildRangeBundle(startDate, endDate)
         val zipBytes = buildZip(bundle)
         context.contentResolver.openOutputStream(uri)?.use { output ->
             output.write(zipBytes)
