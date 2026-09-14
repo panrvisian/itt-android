@@ -29,6 +29,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.FolderZip
+import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -2004,6 +2007,39 @@ private fun TimelineScreen(
     val listState = rememberLazyListState()
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
+    var showSingleDayExportDialog by remember { mutableStateOf(false) }
+
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportSingleDayCsv(day, uri)
+        }
+    }
+
+    val createZipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportSingleDayZip(day, uri)
+        }
+    }
+
+    if (showSingleDayExportDialog) {
+        SingleDayExportDialog(
+            date = day,
+            onDismiss = { showSingleDayExportDialog = false },
+            onExportZip = {
+                showSingleDayExportDialog = false
+                createZipLauncher.launch("itt_export_$day.zip")
+            },
+            onExportCsv = {
+                showSingleDayExportDialog = false
+                createCsvLauncher.launch("itt_export_$day.csv")
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = day,
@@ -2011,6 +2047,7 @@ private fun TimelineScreen(
             expanded = calendarExpanded,
             onExpandedChange = { calendarExpanded = it },
             onDateSelected = viewModel::setTimelineDate,
+            onExportClick = { showSingleDayExportDialog = true },
             modifier = Modifier
                 .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
@@ -5140,6 +5177,109 @@ private fun TimelineRecordBlock(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleDayExportDialog(
+    date: LocalDate,
+    onDismiss: () -> Unit,
+    onExportZip: () -> Unit,
+    onExportCsv: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+        ) {
+            Column(
+                modifier = Modifier.padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "导出单日日志",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = date.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Text(
+                    text = "请选择导出的格式：",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Surface(
+                    onClick = onExportZip,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderZip,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("ZIP 压缩包格式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("包含单日 CSV 数据表与当天备注照片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Surface(
+                    onClick = onExportCsv,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.TableChart,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("纯 CSV 表格格式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text("仅包含单日 CSV 数据表，不含照片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("取消")
                     }
                 }
             }

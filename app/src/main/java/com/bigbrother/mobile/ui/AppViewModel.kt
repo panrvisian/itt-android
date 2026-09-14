@@ -401,6 +401,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.exportCsv(uri) }
     }
 
+    fun exportSingleDayCsv(date: LocalDate, uri: Uri) {
+        viewModelScope.launch {
+            repository.exportSingleDayCsv(date, uri)
+            _toastMessage.value = "已成功导出 $date 单日 CSV 日志"
+        }
+    }
+
+    fun exportSingleDayZip(date: LocalDate, uri: Uri) {
+        viewModelScope.launch {
+            repository.exportSingleDayZip(date, uri)
+            _toastMessage.value = "已成功导出 $date 单日 ZIP 日志"
+        }
+    }
+
     fun importCsv(uri: Uri, merge: Boolean) {
         viewModelScope.launch { repository.importCsv(uri, merge) }
     }

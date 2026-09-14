@@ -26,6 +26,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.IosShare
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +95,7 @@ fun MiuixCalendarHeader(
     onDateSelected: (LocalDate) -> Unit,
     semesterStart: LocalDate? = null,
     semesterEnd: LocalDate? = null,
+    onExportClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
@@ -169,18 +173,36 @@ fun MiuixCalendarHeader(
                 .fillMaxWidth()
                 .height(52.dp)
         ) {
-            MiuixLiquidGlassCapsuleButton(
-                text = currentLabel,
+            Row(
                 modifier = Modifier.align(Alignment.CenterStart),
-                onClick = {
-                    when (mode) {
-                        CalendarHeaderMode.Day -> onDateSelected(today)
-                        CalendarHeaderMode.Week -> onDateSelected(today)
-                        CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
-                        CalendarHeaderMode.Semester -> Unit
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MiuixLiquidGlassCapsuleButton(
+                    text = currentLabel,
+                    onClick = {
+                        when (mode) {
+                            CalendarHeaderMode.Day -> onDateSelected(today)
+                            CalendarHeaderMode.Week -> onDateSelected(today)
+                            CalendarHeaderMode.Month -> onDateSelected(today.withDayOfMonth(1))
+                            CalendarHeaderMode.Semester -> Unit
+                        }
+                    }
+                )
+                if (onExportClick != null) {
+                    MiuixLiquidGlassCapsuleButton(
+                        onClick = onExportClick,
+                        contentDescription = "导出日志"
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.IosShare,
+                            contentDescription = "导出",
+                            tint = MiuixTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
-            )
+            }
             Row(
                 modifier = Modifier
                     .align(Alignment.Center)
