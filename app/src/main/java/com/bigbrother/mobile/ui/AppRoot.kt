@@ -4400,7 +4400,16 @@ private fun ManualRecordDialog(
                     )
                     TimePickerRow(startHour, { startHour = it }, startMinute, { startMinute = it })
                     Text("结束")
-                    TimeAdjustRow(endHour, { endHour = it }, endMinute, { endMinute = it })
+                    TimeAdjustRow(
+                        endHour, { endHour = it }, endMinute, { endMinute = it },
+                        extraLabel = "当前时间",
+                        extraEnabled = true,
+                        onExtraClick = {
+                            val nowLdt = TimeUtils.toLocalDateTime(TimeUtils.now())
+                            endHour = nowLdt.hour
+                            endMinute = nowLdt.minute
+                        }
+                    )
                     TimePickerRow(endHour, { endHour = it }, endMinute, { endMinute = it })
                 }
             }
@@ -4813,7 +4822,16 @@ private fun RecordEditorDialog(
                     }
                     if (!keepRunning) {
                         Text("结束")
-                        TimeAdjustRow(endHour, { endHour = it }, endMinute, { endMinute = it })
+                        TimeAdjustRow(
+                            endHour, { endHour = it }, endMinute, { endMinute = it },
+                            extraLabel = "当前时间",
+                            extraEnabled = true,
+                            onExtraClick = {
+                                val nowLdt = TimeUtils.toLocalDateTime(TimeUtils.now())
+                                endHour = nowLdt.hour
+                                endMinute = nowLdt.minute
+                            }
+                        )
                         TimePickerRow(endHour, { endHour = it }, endMinute, { endMinute = it })
                     }
                 }
