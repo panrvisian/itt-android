@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +23,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: MainViewModel = viewModel(factory = MainViewModelFactory(application as BigBrotherApp))
             val settings by vm.settings.collectAsStateWithLifecycle()
+
+            LaunchedEffect(intent) {
+                if (intent?.getStringExtra("open_mode") == "backfill") {
+                    vm.setRecordMode(RecordMode.Backfill)
+                }
+            }
 
             BigBrotherTheme(settings = settings) {
                 AppRoot(

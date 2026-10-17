@@ -203,6 +203,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
+import com.bigbrother.mobile.data.IttNotificationHelper
 import com.bigbrother.mobile.R
 import com.bigbrother.mobile.data.EventEntity
 import com.bigbrother.mobile.data.EventGridColumns
@@ -477,6 +478,19 @@ fun AppRoot(
         if (toastMessage != null) {
             delay(2200)
             viewModel.dismissToast()
+        }
+    }
+
+    LaunchedEffect(records, settings.ongoingNotificationEnabled) {
+        if (settings.ongoingNotificationEnabled) {
+            val running = records.firstOrNull { it.endTime == null }
+            IttNotificationHelper.updateOngoingNotification(
+                context = context,
+                runningEventName = running?.eventNameSnapshot,
+                startTime = running?.startTime
+            )
+        } else {
+            IttNotificationHelper.cancelOngoingNotification(context)
         }
     }
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0), pageCount = { tabs.size })
@@ -3247,8 +3261,10 @@ private fun ThemeSwitchPreference(
 @Composable
 private fun BehaviorSettings(settings: AppSettings, viewModel: MainViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionCard(title = "行为") {
+        SectionCard(title = "行为与提醒") {
             SettingLine("震动", settings.vibrationEnabled) { viewModel.setVibrationEnabled(it) }
+            SettingLine("常驻通知栏控制", settings.ongoingNotificationEnabled) { viewModel.setOngoingNotificationEnabled(it) }
+            SettingLine("闲置超时补录提醒", settings.inactivityReminderEnabled) { viewModel.setInactivityReminderEnabled(it) }
             Spacer(modifier = Modifier.height(8.dp))
             Text("收藏自动填充数量：${settings.favoriteAutoFillCount}")
             ChoiceChipRow(

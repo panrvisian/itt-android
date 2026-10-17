@@ -107,7 +107,9 @@ class SettingsStore(private val context: Context) {
             componentAlpha = (this[floatPreferencesKey(KEY_COMPONENT_ALPHA)] ?: 0.88f).coerceIn(0f, 1f),
             glassEffectEnabled = this[booleanPreferencesKey(KEY_GLASS_EFFECT)] ?: false,
             wallpaperBlurRadius = (this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] ?: 22f).coerceIn(0f, 40f),
-            homeHintDismissed = this[booleanPreferencesKey(KEY_HOME_HINT_DISMISSED)] ?: false
+            homeHintDismissed = this[booleanPreferencesKey(KEY_HOME_HINT_DISMISSED)] ?: false,
+            ongoingNotificationEnabled = this[booleanPreferencesKey(KEY_ONGOING_NOTIFICATION_ENABLED)] ?: true,
+            inactivityReminderEnabled = this[booleanPreferencesKey(KEY_INACTIVITY_REMINDER_ENABLED)] ?: true
         )
     }
 
@@ -175,6 +177,8 @@ class SettingsStore(private val context: Context) {
         this[booleanPreferencesKey(KEY_GLASS_EFFECT)] = settings.glassEffectEnabled
         this[floatPreferencesKey(KEY_WALLPAPER_BLUR_RADIUS)] = settings.wallpaperBlurRadius.coerceIn(0f, 40f)
         this[booleanPreferencesKey(KEY_HOME_HINT_DISMISSED)] = settings.homeHintDismissed
+        this[booleanPreferencesKey(KEY_ONGOING_NOTIFICATION_ENABLED)] = settings.ongoingNotificationEnabled
+        this[booleanPreferencesKey(KEY_INACTIVITY_REMINDER_ENABLED)] = settings.inactivityReminderEnabled
     }
 
     companion object {
@@ -213,6 +217,8 @@ class SettingsStore(private val context: Context) {
         private const val KEY_GLASS_EFFECT = "glass_effect"
         private const val KEY_WALLPAPER_BLUR_RADIUS = "wallpaper_blur_radius"
         private const val KEY_HOME_HINT_DISMISSED = "home_hint_dismissed"
+        private const val KEY_ONGOING_NOTIFICATION_ENABLED = "ongoing_notification_enabled"
+        private const val KEY_INACTIVITY_REMINDER_ENABLED = "inactivity_reminder_enabled"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
     }
 }

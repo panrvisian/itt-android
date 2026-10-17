@@ -46,7 +46,9 @@ data class AppSettings(
     val componentAlpha: Float = 0.88f,
     val glassEffectEnabled: Boolean = false,
     val wallpaperBlurRadius: Float = 22f,
-    val homeHintDismissed: Boolean = false
+    val homeHintDismissed: Boolean = false,
+    val ongoingNotificationEnabled: Boolean = true,
+    val inactivityReminderEnabled: Boolean = true
 )
 
 @Entity(tableName = "groups")

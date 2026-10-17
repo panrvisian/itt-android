@@ -311,6 +311,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setSettings { it.copy(vibrationEnabled = enabled) } }
     }
 
+    fun setOngoingNotificationEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(ongoingNotificationEnabled = enabled) } }
+    }
+
+    fun setInactivityReminderEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setSettings { it.copy(inactivityReminderEnabled = enabled) } }
+    }
+
     fun setFavoriteAutoFillCount(count: Int) {
         viewModelScope.launch { repository.setSettings { it.copy(favoriteAutoFillCount = count.coerceIn(1, 12)) } }
     }
