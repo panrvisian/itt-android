@@ -501,6 +501,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveNote(recordId, text, imageNames)
     }
 
+    fun clearNote(recordId: String) {
+        viewModelScope.launch {
+            repository.saveNote(recordId, "", emptyList())
+            showToast("已清空该条记录的备注")
+        }
+    }
+
     suspend fun removeDraftImageFile(recordId: String, fileName: String) {
         repository.removeDraftImageFile(recordId, fileName)
     }
