@@ -2,9 +2,11 @@
 
 package com.bigbrother.mobile.ui
 
+import android.Manifest
 import android.net.Uri
 import androidx.core.net.toUri
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -201,6 +203,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.IttNotificationHelper
@@ -481,14 +484,36 @@ fun AppRoot(
         }
     }
 
-    LaunchedEffect(records, settings.ongoingNotificationEnabled) {
-        if (settings.ongoingNotificationEnabled) {
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted && settings.ongoingNotificationEnabled) {
             val running = records.firstOrNull { it.endTime == null }
             IttNotificationHelper.updateOngoingNotification(
                 context = context,
                 runningEventName = running?.eventNameSnapshot,
                 startTime = running?.startTime
             )
+        }
+    }
+
+    LaunchedEffect(records, settings.ongoingNotificationEnabled) {
+        if (settings.ongoingNotificationEnabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                val running = records.firstOrNull { it.endTime == null }
+                IttNotificationHelper.updateOngoingNotification(
+                    context = context,
+                    runningEventName = running?.eventNameSnapshot,
+                    startTime = running?.startTime
+                )
+            }
         } else {
             IttNotificationHelper.cancelOngoingNotification(context)
         }
