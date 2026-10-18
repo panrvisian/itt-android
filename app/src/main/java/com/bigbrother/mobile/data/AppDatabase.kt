@@ -223,11 +223,15 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `tasks` (" +
                         "`id` TEXT NOT NULL PRIMARY KEY, " +
                         "`title` TEXT NOT NULL, " +
-                        "`groupId` TEXT, " +
+                        "`eventId` TEXT, " +
+                        "`location` TEXT, " +
+                        "`person` TEXT, " +
                         "`isCompleted` INTEGER NOT NULL DEFAULT 0, " +
                         "`createdTime` INTEGER NOT NULL, " +
                         "`completedTime` INTEGER, " +
-                        "`priority` INTEGER NOT NULL DEFAULT 0)"
+                        "`priority` INTEGER NOT NULL DEFAULT 0, " +
+                        "`taskType` TEXT NOT NULL DEFAULT 'Normal', " +
+                        "`targetDateEpochDay` INTEGER)"
                 )
             }
         }

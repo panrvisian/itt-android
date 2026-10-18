@@ -90,6 +90,25 @@ object CsvCodec {
         bundle.noteImages.forEach { image ->
             sb.appendLine(listOf(image.recordId, image.fileName, image.sortOrder.toString()).joinToString(",") { csvField(it) })
         }
+        sb.appendLine("[TASKS]")
+        sb.appendLine("id,title,event_id,location,person,is_completed,created_time,completed_time,priority,task_type,target_date")
+        bundle.tasks.forEach { t ->
+            sb.appendLine(
+                listOf(
+                    t.id,
+                    t.title,
+                    t.eventId.orEmpty(),
+                    t.location.orEmpty(),
+                    t.person.orEmpty(),
+                    t.isCompleted.toString(),
+                    t.createdTime.toString(),
+                    t.completedTime?.toString().orEmpty(),
+                    t.priority.toString(),
+                    t.taskType.name,
+                    t.targetDateEpochDay?.toString().orEmpty()
+                ).joinToString(",") { csvField(it) }
+            )
+        }
         return sb.toString()
     }
 
@@ -100,6 +119,7 @@ object CsvCodec {
         val events = mutableListOf<EventEntity>()
         val records = mutableListOf<RecordEntity>()
         val noteImages = mutableListOf<NoteImageEntity>()
+        val tasks = mutableListOf<TaskEntity>()
         for (parts in csvRecordSequence(text)) {
             if (parts.isEmpty() || parts.all { it.isBlank() }) continue
             if (parts.size == 1 && parts[0].startsWith("[") && parts[0].endsWith("]")) {
@@ -157,12 +177,31 @@ object CsvCodec {
                         sortOrder = parts[2].toIntOrNull() ?: noteImages.size
                     )
                 }
+                "TASKS" -> if (parts.size >= 6 && parts[0] != "id") {
+                    tasks += TaskEntity(
+                        id = parts[0],
+                        title = parts[1],
+                        eventId = parts.getOrNull(2)?.ifBlank { null },
+                        location = parts.getOrNull(3)?.ifBlank { null },
+                        person = parts.getOrNull(4)?.ifBlank { null },
+                        isCompleted = parseBool(parts.getOrNull(5).orEmpty()) ?: false,
+                        createdTime = parts.getOrNull(6)?.toLongOrNull() ?: System.currentTimeMillis(),
+                        completedTime = parts.getOrNull(7)?.toLongOrNull(),
+                        priority = parts.getOrNull(8)?.toIntOrNull() ?: 0,
+                        taskType = when (parts.getOrNull(9)?.lowercase()) {
+                            "longterm" -> TaskType.LongTerm
+                            "shortterm" -> TaskType.ShortTerm
+                            else -> TaskType.Normal
+                        },
+                        targetDateEpochDay = parts.getOrNull(10)?.toLongOrNull()
+                    )
+                }
             }
         }
         if (groups.none { it.isSystem }) {
             groups.add(0, GroupEntity(name = "未分组", colorArgb = 0xFF9E9E9E.toInt(), isSystem = true, isDeleted = false))
         }
-        return AppBundle(settings = settings, groups = groups, events = events, records = records, noteImages = noteImages)
+        return AppBundle(settings = settings, groups = groups, events = events, records = records, noteImages = noteImages, tasks = tasks)
     }
 
     private fun applyWindowsSetting(parts: List<String>, settings: AppSettings): AppSettings {

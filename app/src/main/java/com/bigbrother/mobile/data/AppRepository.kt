@@ -817,10 +817,22 @@ class AppRepository(
 
     // ---------- Tasks ----------
 
-    suspend fun addTask(title: String, groupId: String?, priority: Int = 0): String = database.withTransaction {
+    suspend fun addTask(
+        title: String,
+        eventId: String? = null,
+        location: String? = null,
+        person: String? = null,
+        taskType: TaskType = TaskType.Normal,
+        targetDateEpochDay: Long? = null,
+        priority: Int = 0
+    ): String = database.withTransaction {
         val task = TaskEntity(
             title = title.trim(),
-            groupId = groupId,
+            eventId = eventId,
+            location = location?.trim()?.ifBlank { null },
+            person = person?.trim()?.ifBlank { null },
+            taskType = taskType,
+            targetDateEpochDay = targetDateEpochDay,
             priority = priority
         )
         tasksDao.insert(task)
@@ -840,26 +852,22 @@ class AppRepository(
 
     suspend fun startTaskAsEvent(taskId: String): String = database.withTransaction {
         val task = tasksDao.getById(taskId) ?: error("task not found")
-        val targetGroupId = task.groupId ?: groupsDao.getAllOnce().firstOrNull { it.isSystem }?.id
-            ?: groupsDao.getAllOnce().first().id
+        val allEvents = eventsDao.getAllOnce().filter { !it.isDeleted }
+        val targetEvent = (task.eventId?.let { id -> allEvents.firstOrNull { it.id == id } })
+            ?: allEvents.firstOrNull { it.isFavorite }
+            ?: allEvents.firstOrNull()
+            ?: error("no available event found")
 
-        val existingEvent = eventsDao.getAllOnce()
-            .firstOrNull { !it.isDeleted && it.name.equals(task.title, ignoreCase = true) && it.groupId == targetGroupId }
+        val noteParts = mutableListOf<String>()
+        noteParts += task.title
+        if (!task.location.isNullOrBlank()) noteParts += "[地点: ${task.location}]"
+        if (!task.person.isNullOrBlank()) noteParts += "[人物: ${task.person}]"
+        val formattedNote = noteParts.joinToString(" ")
 
-        val eventId = if (existingEvent != null) {
-            existingEvent.id
-        } else {
-            val group = groupsDao.getById(targetGroupId) ?: error("group not found")
-            val newEvent = EventEntity(
-                name = task.title,
-                groupId = group.id
-            )
-            eventsDao.insert(newEvent)
-            newEvent.id
-        }
-
-        startEvent(eventId)
-    }
+        val recordId = startEvent(targetEvent.id)
+        recordsDao.updateNoteText(recordId, formattedNote)
+        recordId
+    }.also { requestWidgetRefresh() }
 
     private fun requestWidgetRefresh() {
         QuickEventWidgetProvider.requestRefresh(context)

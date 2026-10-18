@@ -51,15 +51,21 @@ data class AppSettings(
     val inactivityReminderEnabled: Boolean = true
 )
 
+enum class TaskType { Normal, LongTerm, ShortTerm }
+
 @Entity(tableName = "tasks")
 data class TaskEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String,
-    val groupId: String? = null,
+    val eventId: String? = null,
+    val location: String? = null,
+    val person: String? = null,
     val isCompleted: Boolean = false,
     val createdTime: Long = System.currentTimeMillis(),
     val completedTime: Long? = null,
-    val priority: Int = 0
+    val priority: Int = 0,
+    val taskType: TaskType = TaskType.Normal,
+    val targetDateEpochDay: Long? = null
 )
 
 @Entity(tableName = "groups")
@@ -111,7 +117,8 @@ data class AppBundle(
     val groups: List<GroupEntity> = emptyList(),
     val events: List<EventEntity> = emptyList(),
     val records: List<RecordEntity> = emptyList(),
-    val noteImages: List<NoteImageEntity> = emptyList()
+    val noteImages: List<NoteImageEntity> = emptyList(),
+    val tasks: List<TaskEntity> = emptyList()
 )
 
 

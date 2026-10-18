@@ -2,6 +2,7 @@
 
 package com.bigbrother.mobile.ui
 
+import android.app.DatePickerDialog
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -93,10 +95,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bigbrother.mobile.R
+import com.bigbrother.mobile.data.EventEntity
 import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.NoteViewState
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.TaskEntity
+import com.bigbrother.mobile.data.TaskType
 import com.bigbrother.mobile.domain.TimeUtils
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import kotlinx.coroutines.Dispatchers
@@ -110,7 +114,7 @@ fun NotesScreen(
     viewModel: MainViewModel,
     notedRecords: List<RecordEntity>,
     imageRecordIds: Set<String>,
-    groups: List<GroupEntity>,
+    events: List<EventEntity>,
     tasks: List<TaskEntity>,
     contentActive: Boolean,
     contentLoaded: Boolean,
@@ -124,11 +128,15 @@ fun NotesScreen(
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = statusBarTop + 8.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
             KernelSegmentedControl(
                 labels = listOf("待办清单", "打卡备注"),
@@ -137,35 +145,46 @@ fun NotesScreen(
             )
         }
 
-        if (selectedSection == 0) {
-            TasksSection(
-                viewModel = viewModel,
-                groups = groups,
-                tasks = tasks,
-                onAddTask = { showCreateTaskDialog = true }
-            )
-        } else {
-            NotesSection(
-                notedRecords = notedRecords,
-                imageRecordIds = imageRecordIds,
-                contentActive = contentActive,
-                contentLoaded = contentLoaded,
-                date = date,
-                onDateChange = onDateChange,
-                onOpen = onOpen,
-                statusBarTop = statusBarTop,
-                onRegisterOnboardingTarget = onRegisterOnboardingTarget
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            if (selectedSection == 0) {
+                TasksSection(
+                    viewModel = viewModel,
+                    events = events,
+                    tasks = tasks,
+                    onAddTask = { showCreateTaskDialog = true }
+                )
+            } else {
+                NotesSection(
+                    notedRecords = notedRecords,
+                    imageRecordIds = imageRecordIds,
+                    contentActive = contentActive,
+                    contentLoaded = contentLoaded,
+                    date = date,
+                    onDateChange = onDateChange,
+                    onOpen = onOpen,
+                    statusBarTop = 0.dp,
+                    onRegisterOnboardingTarget = onRegisterOnboardingTarget
+                )
+            }
         }
     }
 
     if (showCreateTaskDialog) {
+        val existingLocations = remember(tasks) { tasks.mapNotNull { it.location }.filter { it.isNotBlank() }.distinct() }
+        val existingPeople = remember(tasks) { tasks.mapNotNull { it.person }.filter { it.isNotBlank() }.distinct() }
+
         TaskEditDialog(
-            groups = groups,
+            events = events,
+            existingLocations = existingLocations,
+            existingPeople = existingPeople,
             onDismiss = { showCreateTaskDialog = false },
-            onConfirm = { title, groupId, priority ->
+            onConfirm = { title, eventId, location, person, taskType, targetDateEpochDay ->
                 showCreateTaskDialog = false
-                viewModel.addTask(title, groupId, priority)
+                viewModel.addTask(title, eventId, location, person, taskType, targetDateEpochDay)
             }
         )
     }
@@ -174,11 +193,11 @@ fun NotesScreen(
 @Composable
 private fun TasksSection(
     viewModel: MainViewModel,
-    groups: List<GroupEntity>,
+    events: List<EventEntity>,
     tasks: List<TaskEntity>,
     onAddTask: () -> Unit
 ) {
-    val groupMap = remember(groups) { groups.associateBy { it.id } }
+    val eventMap = remember(events) { events.associateBy { it.id } }
     val (pendingTasks, completedTasks) = remember(tasks) {
         tasks.partition { !it.isCompleted }
     }
@@ -246,10 +265,10 @@ private fun TasksSection(
             }
         } else {
             items(pendingTasks, key = { it.id }) { task ->
-                val group = task.groupId?.let { groupMap[it] }
+                val event = task.eventId?.let { eventMap[it] }
                 TaskItemCard(
                     task = task,
-                    group = group,
+                    event = event,
                     onToggle = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.toggleTaskCompleted(task.id)
@@ -291,10 +310,10 @@ private fun TasksSection(
 
             if (showCompleted) {
                 items(completedTasks, key = { it.id }) { task ->
-                    val group = task.groupId?.let { groupMap[it] }
+                    val event = task.eventId?.let { eventMap[it] }
                     TaskItemCard(
                         task = task,
-                        group = group,
+                        event = event,
                         onToggle = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.toggleTaskCompleted(task.id)
@@ -315,18 +334,24 @@ private fun TasksSection(
 @Composable
 private fun TaskItemCard(
     task: TaskEntity,
-    group: GroupEntity?,
+    event: EventEntity?,
     onToggle: () -> Unit,
     onStartEvent: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
+    val today = remember { LocalDate.now() }
+    val targetDate = remember(task.targetDateEpochDay) {
+        task.targetDateEpochDay?.let { LocalDate.ofEpochDay(it) }
+    }
+    val isOverdue = remember(targetDate, task.isCompleted, task.taskType) {
+        task.taskType == TaskType.LongTerm && targetDate != null && !task.isCompleted && today.isAfter(targetDate)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        border = BorderStroke(1.dp, if (isOverdue) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -335,15 +360,6 @@ private fun TaskItemCard(
             Checkbox(
                 checked = task.isCompleted,
                 onCheckedChange = { onToggle() }
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(groupColor)
             )
 
             Spacer(modifier = Modifier.width(10.dp))
@@ -359,13 +375,80 @@ private fun TaskItemCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (group != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = group.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (event != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        ) {
+                            Text(
+                                text = "📌 ${event.name}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (!task.location.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ) {
+                            Text(
+                                text = "📍 ${task.location}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (!task.person.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ) {
+                            Text(
+                                text = "👤 ${task.person}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    if (task.taskType == TaskType.LongTerm && targetDate != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isOverdue) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                        ) {
+                            Text(
+                                text = if (isOverdue) "⚠️ 截止 $targetDate (已逾期)" else "⏰ 截止 $targetDate",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isOverdue) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    } else if (task.taskType == TaskType.ShortTerm && targetDate != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ) {
+                            Text(
+                                text = "📅 预计 $targetDate",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -402,13 +485,46 @@ private fun TaskItemCard(
 
 @Composable
 private fun TaskEditDialog(
-    groups: List<GroupEntity>,
+    events: List<EventEntity>,
+    existingLocations: List<String>,
+    existingPeople: List<String>,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, groupId: String?, priority: Int) -> Unit
+    onConfirm: (
+        title: String,
+        eventId: String?,
+        location: String?,
+        person: String?,
+        taskType: TaskType,
+        targetDateEpochDay: Long?
+    ) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var selectedGroupId by remember(groups) { mutableStateOf(groups.firstOrNull()?.id) }
-    var priority by remember { mutableIntStateOf(0) }
+    var selectedEventId by remember { mutableStateOf<String?>(null) }
+    var location by remember { mutableStateOf("") }
+    var person by remember { mutableStateOf("") }
+    var taskType by remember { mutableStateOf(TaskType.Normal) }
+    var targetDate by remember { mutableStateOf(LocalDate.now().plusDays(1)) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+
+    if (showDatePicker) {
+        val datePicker = DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                targetDate = LocalDate.of(year, month + 1, dayOfMonth)
+                showDatePicker = false
+            },
+            targetDate.year,
+            targetDate.monthValue - 1,
+            targetDate.dayOfMonth
+        )
+        DisposableEffect(Unit) {
+            datePicker.show()
+            datePicker.setOnDismissListener { showDatePicker = false }
+            onDispose { datePicker.dismiss() }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -417,11 +533,13 @@ private fun TaskEditDialog(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "新建待办事项",
+                    text = "新建待办 / 备忘",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -430,37 +548,108 @@ private fun TaskEditDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    placeholder = { Text("输入待办内容，如：完成周报") },
+                    placeholder = { Text("输入待办/备忘内容，如：整理学术论文资料") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
-                Text(
-                    text = "选择所属分组：",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
+                Text("关联事件库（打卡时自动记录）：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    groups.forEach { group ->
+                    FilterChip(
+                        selected = selectedEventId == null,
+                        onClick = { selectedEventId = null },
+                        label = { Text("不关联") }
+                    )
+                    events.forEach { event ->
                         FilterChip(
-                            selected = selectedGroupId == group.id,
-                            onClick = { selectedGroupId = group.id },
-                            label = { Text(group.name) },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .background(colorFromArgb(group.colorArgb), CircleShape)
-                                )
-                            }
+                            selected = selectedEventId == event.id,
+                            onClick = { selectedEventId = event.id },
+                            label = { Text(if (event.isFavorite) "★ ${event.name}" else event.name) }
                         )
+                    }
+                }
+
+                Text("任务属性与时间：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                KernelSegmentedControl(
+                    labels = listOf("普通", "长期(截止)", "短期(预计)"),
+                    selectedIndex = when (taskType) {
+                        TaskType.LongTerm -> 1
+                        TaskType.ShortTerm -> 2
+                        else -> 0
+                    },
+                    onSelected = { index ->
+                        taskType = when (index) {
+                            1 -> TaskType.LongTerm
+                            2 -> TaskType.ShortTerm
+                            else -> TaskType.Normal
+                        }
+                    }
+                )
+
+                if (taskType != TaskType.Normal) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (taskType == TaskType.LongTerm) "截止日期：" else "预计完成日期：",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedButton(onClick = { showDatePicker = true }) {
+                            Text(targetDate.toString(), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Text("关联地点：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    placeholder = { Text("如：图书馆 / 办公室 / 健身房") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                if (existingLocations.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        existingLocations.forEach { loc ->
+                            FilterChip(
+                                selected = location == loc,
+                                onClick = { location = loc },
+                                label = { Text(loc) }
+                            )
+                        }
+                    }
+                }
+
+                Text("关联人物：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = person,
+                    onValueChange = { person = it },
+                    placeholder = { Text("如：张三 / 导师 / 组长") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                if (existingPeople.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        existingPeople.forEach { p ->
+                            FilterChip(
+                                selected = person == p,
+                                onClick = { person = p },
+                                label = { Text(p) }
+                            )
+                        }
                     }
                 }
 
@@ -474,7 +663,14 @@ private fun TaskEditDialog(
                     Button(
                         onClick = {
                             if (title.isNotBlank()) {
-                                onConfirm(title, selectedGroupId, priority)
+                                onConfirm(
+                                    title,
+                                    selectedEventId,
+                                    location.ifBlank { null },
+                                    person.ifBlank { null },
+                                    taskType,
+                                    if (taskType != TaskType.Normal) targetDate.toEpochDay() else null
+                                )
                             }
                         },
                         enabled = title.isNotBlank()

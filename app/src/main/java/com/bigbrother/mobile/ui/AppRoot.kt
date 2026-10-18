@@ -856,7 +856,7 @@ fun AppRoot(
                                         viewModel = viewModel,
                                         notedRecords = validNoteProjection?.notedRecords.orEmpty(),
                                         imageRecordIds = validNoteProjection?.imageRecordIds.orEmpty(),
-                                        groups = visibleGroups,
+                                        events = visibleEvents,
                                         tasks = tasks,
                                         contentActive = contentActive,
                                         contentLoaded = contentActive && validNoteProjection != null,
@@ -3193,10 +3193,11 @@ private fun ThemePreviewCard(settings: AppSettings) {
 internal fun KernelSegmentedControl(
     labels: List<String>,
     selectedIndex: Int,
-    onSelected: (Int) -> Unit
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
             alpha = (LocalComponentAlpha.current * if (LocalGlassEffect.current) 0.78f else 1f).coerceIn(0f, 1f)
@@ -3210,13 +3211,13 @@ internal fun KernelSegmentedControl(
                 val selected = index == selectedIndex
                 Surface(
                     onClick = { onSelected(index) },
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                    modifier = Modifier.weight(1f).height(44.dp),
                     shape = RoundedCornerShape(18.dp),
                     color = if (selected) MaterialTheme.colorScheme.surfaceContainerLowest else Color.Transparent,
                     contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     shadowElevation = if (selected) 1.dp else 0.dp
                 ) {
-                    Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
                         Text(
                             label,
                             style = MaterialTheme.typography.titleMedium,

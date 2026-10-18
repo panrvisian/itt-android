@@ -17,6 +17,7 @@ import com.bigbrother.mobile.data.NoteViewState
 import com.bigbrother.mobile.data.RecordActionResult
 import com.bigbrother.mobile.data.RecordEntity
 import com.bigbrother.mobile.data.ThemeMode
+import com.bigbrother.mobile.data.TaskType
 import com.bigbrother.mobile.data.TotalDurationMode
 import com.bigbrother.mobile.data.UiStyle
 import com.bigbrother.mobile.data.WallpaperMode
@@ -411,8 +412,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- Tasks ----------
 
-    fun addTask(title: String, groupId: String?, priority: Int = 0) {
-        viewModelScope.launch { repository.addTask(title, groupId, priority) }
+    fun addTask(
+        title: String,
+        eventId: String? = null,
+        location: String? = null,
+        person: String? = null,
+        taskType: TaskType = TaskType.Normal,
+        targetDateEpochDay: Long? = null,
+        priority: Int = 0
+    ) {
+        viewModelScope.launch {
+            repository.addTask(title, eventId, location, person, taskType, targetDateEpochDay, priority)
+        }
     }
 
     fun toggleTaskCompleted(taskId: String) {
