@@ -161,9 +161,39 @@ interface NoteImageDao {
     suspend fun deleteAll()
 }
 
+@Dao
+interface TaskDao {
+    @Query("SELECT * FROM `tasks` ORDER BY isCompleted ASC, priority DESC, createdTime DESC")
+    fun observeAll(): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM `tasks`")
+    suspend fun getAllOnce(): List<TaskEntity>
+
+    @Query("SELECT * FROM `tasks` WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): TaskEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: TaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(list: List<TaskEntity>)
+
+    @Query("UPDATE `tasks` SET isCompleted = :completed, completedTime = :completedTime WHERE id = :id")
+    suspend fun setCompleted(id: String, completed: Boolean, completedTime: Long?)
+
+    @Query("DELETE FROM `tasks` WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM `tasks`")
+    suspend fun deleteAll()
+
+    @Delete
+    suspend fun delete(entity: TaskEntity)
+}
+
 @Database(
-    entities = [GroupEntity::class, EventEntity::class, RecordEntity::class, NoteImageEntity::class],
-    version = 2,
+    entities = [GroupEntity::class, EventEntity::class, RecordEntity::class, NoteImageEntity::class, TaskEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -171,6 +201,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun events(): EventDao
     abstract fun records(): RecordDao
     abstract fun noteImages(): NoteImageDao
+    abstract fun tasks(): TaskDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -182,6 +213,21 @@ abstract class AppDatabase : RoomDatabase() {
                         "recordId TEXT NOT NULL, " +
                         "fileName TEXT NOT NULL, " +
                         "sortOrder INTEGER NOT NULL)"
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tasks` (" +
+                        "`id` TEXT NOT NULL PRIMARY KEY, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`groupId` TEXT, " +
+                        "`isCompleted` INTEGER NOT NULL DEFAULT 0, " +
+                        "`createdTime` INTEGER NOT NULL, " +
+                        "`completedTime` INTEGER, " +
+                        "`priority` INTEGER NOT NULL DEFAULT 0)"
                 )
             }
         }

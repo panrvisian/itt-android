@@ -71,6 +71,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .onEach { markHomeDataSourceReady(HomeDataSource.Records) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val noteImages = repository.noteImages.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val tasks = repository.tasks.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val settings = repository.settings
         .onEach { markHomeDataSourceReady(HomeDataSource.Settings) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
@@ -406,6 +407,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _toastMessage.value = "较高透明度需要更多 GPU 离屏渲染开销"
         }
         viewModelScope.launch { repository.setSettings { it.copy(componentAlpha = alpha.coerceIn(0f, 1f)) } }
+    }
+
+    // ---------- Tasks ----------
+
+    fun addTask(title: String, groupId: String?, priority: Int = 0) {
+        viewModelScope.launch { repository.addTask(title, groupId, priority) }
+    }
+
+    fun toggleTaskCompleted(taskId: String) {
+        viewModelScope.launch { repository.toggleTaskCompleted(taskId) }
+    }
+
+    fun deleteTask(taskId: String) {
+        viewModelScope.launch { repository.deleteTask(taskId) }
+    }
+
+    fun startTaskAsEvent(taskId: String) {
+        viewModelScope.launch {
+            repository.startTaskAsEvent(taskId)
+            _selectedTab.value = AppTab.Home
+            showToast("已启动任务打卡！")
+        }
     }
 
     fun setGlassEffectEnabled(enabled: Boolean) {

@@ -11,10 +11,12 @@ import androidx.core.content.FileProvider
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,15 +34,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -66,19 +77,26 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bigbrother.mobile.R
+import com.bigbrother.mobile.data.GroupEntity
 import com.bigbrother.mobile.data.NoteViewState
 import com.bigbrother.mobile.data.RecordEntity
+import com.bigbrother.mobile.data.TaskEntity
 import com.bigbrother.mobile.domain.TimeUtils
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +107,388 @@ import java.time.LocalDate
 
 @Composable
 fun NotesScreen(
+    viewModel: MainViewModel,
+    notedRecords: List<RecordEntity>,
+    imageRecordIds: Set<String>,
+    groups: List<GroupEntity>,
+    tasks: List<TaskEntity>,
+    contentActive: Boolean,
+    contentLoaded: Boolean,
+    date: LocalDate,
+    onDateChange: (LocalDate) -> Unit,
+    onOpen: (RecordEntity) -> Unit,
+    onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
+) {
+    var selectedSection by rememberSaveable { mutableIntStateOf(0) }
+    var showCreateTaskDialog by remember { mutableStateOf(false) }
+
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            KernelSegmentedControl(
+                labels = listOf("待办清单", "打卡备注"),
+                selectedIndex = selectedSection,
+                onSelected = { selectedSection = it }
+            )
+        }
+
+        if (selectedSection == 0) {
+            TasksSection(
+                viewModel = viewModel,
+                groups = groups,
+                tasks = tasks,
+                onAddTask = { showCreateTaskDialog = true }
+            )
+        } else {
+            NotesSection(
+                notedRecords = notedRecords,
+                imageRecordIds = imageRecordIds,
+                contentActive = contentActive,
+                contentLoaded = contentLoaded,
+                date = date,
+                onDateChange = onDateChange,
+                onOpen = onOpen,
+                statusBarTop = statusBarTop,
+                onRegisterOnboardingTarget = onRegisterOnboardingTarget
+            )
+        }
+    }
+
+    if (showCreateTaskDialog) {
+        TaskEditDialog(
+            groups = groups,
+            onDismiss = { showCreateTaskDialog = false },
+            onConfirm = { title, groupId, priority ->
+                showCreateTaskDialog = false
+                viewModel.addTask(title, groupId, priority)
+            }
+        )
+    }
+}
+
+@Composable
+private fun TasksSection(
+    viewModel: MainViewModel,
+    groups: List<GroupEntity>,
+    tasks: List<TaskEntity>,
+    onAddTask: () -> Unit
+) {
+    val groupMap = remember(groups) { groups.associateBy { it.id } }
+    val (pendingTasks, completedTasks) = remember(tasks) {
+        tasks.partition { !it.isCompleted }
+    }
+    var showCompleted by rememberSaveable { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 8.dp,
+            end = 16.dp,
+            bottom = LocalMainBottomBarPadding.current
+        )
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "我的待办 (${pendingTasks.size})",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Button(
+                    onClick = onAddTask,
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("新建待办")
+                }
+            }
+        }
+
+        if (pendingTasks.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "暂无未完成待办，点击右上角新建",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            items(pendingTasks, key = { it.id }) { task ->
+                val group = task.groupId?.let { groupMap[it] }
+                TaskItemCard(
+                    task = task,
+                    group = group,
+                    onToggle = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.toggleTaskCompleted(task.id)
+                    },
+                    onStartEvent = {
+                        viewModel.startTaskAsEvent(task.id)
+                    },
+                    onDelete = {
+                        viewModel.deleteTask(task.id)
+                    }
+                )
+            }
+        }
+
+        if (completedTasks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showCompleted = !showCompleted }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "已完成 (${completedTasks.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = if (showCompleted) "收起 ▴" else "展开 ▾",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (showCompleted) {
+                items(completedTasks, key = { it.id }) { task ->
+                    val group = task.groupId?.let { groupMap[it] }
+                    TaskItemCard(
+                        task = task,
+                        group = group,
+                        onToggle = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.toggleTaskCompleted(task.id)
+                        },
+                        onStartEvent = {
+                            viewModel.startTaskAsEvent(task.id)
+                        },
+                        onDelete = {
+                            viewModel.deleteTask(task.id)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskItemCard(
+    task: TaskEntity,
+    group: GroupEntity?,
+    onToggle: () -> Unit,
+    onStartEvent: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = task.isCompleted,
+                onCheckedChange = { onToggle() }
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(groupColor)
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                    ),
+                    fontWeight = if (task.isCompleted) FontWeight.Normal else FontWeight.SemiBold,
+                    color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (group != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = group.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            IconButton(
+                onClick = onStartEvent,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PlayArrow,
+                    contentDescription = "启动打卡",
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = "删除待办",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskEditDialog(
+    groups: List<GroupEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, groupId: String?, priority: Int) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var selectedGroupId by remember(groups) { mutableStateOf(groups.firstOrNull()?.id) }
+    var priority by remember { mutableIntStateOf(0) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "新建待办事项",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    placeholder = { Text("输入待办内容，如：完成周报") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Text(
+                    text = "选择所属分组：",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    groups.forEach { group ->
+                        FilterChip(
+                            selected = selectedGroupId == group.id,
+                            onClick = { selectedGroupId = group.id },
+                            label = { Text(group.name) },
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(colorFromArgb(group.colorArgb), CircleShape)
+                                )
+                            }
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (title.isNotBlank()) {
+                                onConfirm(title, selectedGroupId, priority)
+                            }
+                        },
+                        enabled = title.isNotBlank()
+                    ) {
+                        Text("创建")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotesSection(
     notedRecords: List<RecordEntity>,
     imageRecordIds: Set<String>,
     contentActive: Boolean,
@@ -96,6 +496,7 @@ fun NotesScreen(
     date: LocalDate,
     onDateChange: (LocalDate) -> Unit,
     onOpen: (RecordEntity) -> Unit,
+    statusBarTop: Dp,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -110,7 +511,6 @@ fun NotesScreen(
     }
     val dayRecords = calculation?.takeIf { it.first === calculationKey }?.second
 
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = date,
@@ -119,7 +519,6 @@ fun NotesScreen(
             onExpandedChange = { calendarExpanded = it },
             onDateSelected = onDateChange,
             modifier = Modifier
-                .padding(top = statusBarTop + 12.dp)
                 .onGloballyPositioned { coordinates ->
                     onRegisterOnboardingTarget(OnboardingTarget.NotesControls, coordinates.boundsInRoot())
                 }

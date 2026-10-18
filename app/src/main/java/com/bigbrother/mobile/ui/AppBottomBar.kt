@@ -2,9 +2,9 @@ package com.bigbrother.mobile.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BarChart
-import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -22,7 +22,7 @@ internal data class BottomBarDestination(
 internal val appBottomBarDestinations = listOf(
     BottomBarDestination(AppTab.Home, "首页", Icons.Rounded.Home),
     BottomBarDestination(AppTab.Timeline, "时间轴", Icons.Rounded.Timeline),
-    BottomBarDestination(AppTab.Notes, "备注", Icons.Rounded.EditNote),
+    BottomBarDestination(AppTab.Notes, "清单", Icons.Rounded.TaskAlt),
     BottomBarDestination(AppTab.Stats, "统计", Icons.Rounded.BarChart),
     BottomBarDestination(AppTab.Settings, "设置", Icons.Rounded.Settings),
 )

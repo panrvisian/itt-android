@@ -51,6 +51,17 @@ data class AppSettings(
     val inactivityReminderEnabled: Boolean = true
 )
 
+@Entity(tableName = "tasks")
+data class TaskEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val groupId: String? = null,
+    val isCompleted: Boolean = false,
+    val createdTime: Long = System.currentTimeMillis(),
+    val completedTime: Long? = null,
+    val priority: Int = 0
+)
+
 @Entity(tableName = "groups")
 data class GroupEntity(
     @PrimaryKey val id: String = newId(),

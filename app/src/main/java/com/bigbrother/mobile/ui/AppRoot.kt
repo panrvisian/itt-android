@@ -478,6 +478,7 @@ fun AppRoot(
 
     val tabs = remember { appBottomBarDestinations.map { it.tab } }
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+    val tasks by viewModel.tasks.collectAsStateWithLifecycle()
 
     LaunchedEffect(toastMessage) {
         if (toastMessage != null) {
@@ -852,8 +853,11 @@ fun AppRoot(
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Notes -> NotesScreen(
+                                        viewModel = viewModel,
                                         notedRecords = validNoteProjection?.notedRecords.orEmpty(),
                                         imageRecordIds = validNoteProjection?.imageRecordIds.orEmpty(),
+                                        groups = visibleGroups,
+                                        tasks = tasks,
                                         contentActive = contentActive,
                                         contentLoaded = contentActive && validNoteProjection != null,
                                         date = notesDate,
@@ -3186,7 +3190,7 @@ private fun ThemePreviewCard(settings: AppSettings) {
 }
 
 @Composable
-private fun KernelSegmentedControl(
+internal fun KernelSegmentedControl(
     labels: List<String>,
     selectedIndex: Int,
     onSelected: (Int) -> Unit

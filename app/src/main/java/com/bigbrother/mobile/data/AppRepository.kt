@@ -39,6 +39,7 @@ class AppRepository(
     private val eventsDao = database.events()
     private val recordsDao = database.records()
     private val noteImagesDao = database.noteImages()
+    private val tasksDao = database.tasks()
     private val noteDraftStore = NoteDraftStore(context)
     private val zone: ZoneId = ZoneId.systemDefault()
 
@@ -46,6 +47,7 @@ class AppRepository(
     val events: Flow<List<EventEntity>> = eventsDao.observeAll()
     val records: Flow<List<RecordEntity>> = recordsDao.observeAll()
     val noteImages: Flow<List<NoteImageEntity>> = noteImagesDao.observeAll()
+    val tasks: Flow<List<TaskEntity>> = tasksDao.observeAll()
     val settings: Flow<AppSettings> = settingsStore.flow
     val onboardingCompleted: Flow<Boolean?> = settingsStore.onboardingCompleted
 
@@ -812,6 +814,52 @@ class AppRepository(
     }
 
 
+
+    // ---------- Tasks ----------
+
+    suspend fun addTask(title: String, groupId: String?, priority: Int = 0): String = database.withTransaction {
+        val task = TaskEntity(
+            title = title.trim(),
+            groupId = groupId,
+            priority = priority
+        )
+        tasksDao.insert(task)
+        task.id
+    }
+
+    suspend fun toggleTaskCompleted(taskId: String) = database.withTransaction {
+        val task = tasksDao.getById(taskId) ?: return@withTransaction
+        val newCompleted = !task.isCompleted
+        val completedTime = if (newCompleted) System.currentTimeMillis() else null
+        tasksDao.setCompleted(taskId, newCompleted, completedTime)
+    }
+
+    suspend fun deleteTask(taskId: String) = database.withTransaction {
+        tasksDao.deleteById(taskId)
+    }
+
+    suspend fun startTaskAsEvent(taskId: String): String = database.withTransaction {
+        val task = tasksDao.getById(taskId) ?: error("task not found")
+        val targetGroupId = task.groupId ?: groupsDao.getAllOnce().firstOrNull { it.isSystem }?.id
+            ?: groupsDao.getAllOnce().first().id
+
+        val existingEvent = eventsDao.getAllOnce()
+            .firstOrNull { !it.isDeleted && it.name.equals(task.title, ignoreCase = true) && it.groupId == targetGroupId }
+
+        val eventId = if (existingEvent != null) {
+            existingEvent.id
+        } else {
+            val group = groupsDao.getById(targetGroupId) ?: error("group not found")
+            val newEvent = EventEntity(
+                name = task.title,
+                groupId = group.id
+            )
+            eventsDao.insert(newEvent)
+            newEvent.id
+        }
+
+        startEvent(eventId)
+    }
 
     private fun requestWidgetRefresh() {
         QuickEventWidgetProvider.requestRefresh(context)
