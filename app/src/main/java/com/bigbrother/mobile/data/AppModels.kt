@@ -58,6 +58,7 @@ data class TaskEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val title: String,
     val eventId: String? = null,
+    val groupId: String? = null,
     val location: String? = null,
     val person: String? = null,
     val isCompleted: Boolean = false,

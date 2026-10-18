@@ -234,11 +234,22 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `eventId` TEXT")
-                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `location` TEXT")
-                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `person` TEXT")
-                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `taskType` TEXT NOT NULL DEFAULT 'Normal'")
-                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `targetDateEpochDay` INTEGER")
+                db.execSQL("DROP TABLE IF EXISTS `tasks`")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tasks` (" +
+                        "`id` TEXT NOT NULL PRIMARY KEY, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`eventId` TEXT, " +
+                        "`groupId` TEXT, " +
+                        "`location` TEXT, " +
+                        "`person` TEXT, " +
+                        "`isCompleted` INTEGER NOT NULL DEFAULT 0, " +
+                        "`createdTime` INTEGER NOT NULL, " +
+                        "`completedTime` INTEGER, " +
+                        "`priority` INTEGER NOT NULL DEFAULT 0, " +
+                        "`taskType` TEXT NOT NULL DEFAULT 'Normal', " +
+                        "`targetDateEpochDay` INTEGER)"
+                )
             }
         }
     }
