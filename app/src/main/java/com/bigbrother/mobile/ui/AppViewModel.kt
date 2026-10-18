@@ -98,6 +98,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
+    fun showToast(message: String) {
+        _toastMessage.value = message
+    }
+
     fun dismissToast() {
         _toastMessage.value = null
     }
@@ -220,6 +224,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addManualRecord(eventId: String, startTime: Long, endTime: Long) {
         viewModelScope.launch { repository.addManualRecord(eventId, startTime, endTime) }
+    }
+
+    fun handleBlankSlotConfirm(eventId: String, startTime: Long, endTime: Long) {
+        viewModelScope.launch {
+            val result = repository.addBackfillRecord(eventId, startTime, endTime)
+            _toastMessage.value = when (result) {
+                is RecordActionResult.BackfillCreated ->
+                    "已成功填补 “${result.eventName}” (${TimeUtils.formatTime(result.startTime, false)} - ${TimeUtils.formatTime(result.endTime, false)})"
+                is RecordActionResult.BackfillMerged ->
+                    "已扩展合并 “${result.eventName}” 至 ${TimeUtils.formatTime(result.newEndTime, false)}"
+                else -> null
+            }
+        }
     }
 
     fun cloneRecord(recordId: String, eventId: String) {

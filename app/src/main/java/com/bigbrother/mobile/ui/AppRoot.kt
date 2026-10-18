@@ -30,6 +30,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FolderZip
@@ -831,6 +832,8 @@ fun AppRoot(
                                         viewModel = viewModel,
                                         settings = settings,
                                         records = records,
+                                        groups = visibleGroups,
+                                        eventsByGroup = eventsByGroup,
                                         notedRecordIds = validNoteProjection?.notedRecordIds.orEmpty(),
                                         contentActive = contentActive,
                                         onRecordClick = { selectedRecord = it },
@@ -2061,6 +2064,8 @@ private fun TimelineScreen(
     viewModel: MainViewModel,
     settings: AppSettings,
     records: List<RecordEntity>,
+    groups: List<GroupEntity>,
+    eventsByGroup: Map<String, List<EventEntity>>,
     notedRecordIds: Set<String>,
     contentActive: Boolean,
     onRecordClick: (RecordEntity) -> Unit,
@@ -2071,6 +2076,23 @@ private fun TimelineScreen(
     val listState = rememberLazyListState()
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
     var compactView by rememberSaveable { mutableStateOf(false) }
+    var blankFillModeActive by rememberSaveable { mutableStateOf(false) }
+    var blankSlotInterval by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+
+    if (blankSlotInterval != null) {
+        BlankSlotBackfillDialog(
+            interval = blankSlotInterval!!,
+            groups = groups,
+            eventsByGroup = eventsByGroup,
+            onDismiss = { blankSlotInterval = null },
+            onConfirm = { eventId, startTime, endTime ->
+                blankSlotInterval = null
+                blankFillModeActive = false
+                viewModel.handleBlankSlotConfirm(eventId, startTime, endTime)
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         MiuixCalendarHeader(
             selectedDate = day,
@@ -2083,6 +2105,16 @@ private fun TimelineScreen(
                     onRegisterOnboardingTarget(OnboardingTarget.TimelineControls, coordinates.boundsInRoot())
                 },
             actions = {
+                MiuixLiquidGlassCapsuleButton(
+                    text = if (blankFillModeActive) "正在填补" else "点选填补",
+                    onClick = {
+                        blankFillModeActive = !blankFillModeActive
+                        if (blankFillModeActive) {
+                            viewModel.showToast("点击时间轴空白区域即可快速填补")
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 MiuixLiquidGlassCapsuleButton(
                     text = if (compactView) "比例" else "紧凑",
                     onClick = { compactView = !compactView }
@@ -2124,6 +2156,8 @@ private fun TimelineScreen(
                     notedRecordIds = notedRecordIds,
                     compactView = compactView,
                     contentActive = contentActive,
+                    blankFillModeActive = blankFillModeActive,
+                    onBlankSlotClick = { startMs, endMs -> blankSlotInterval = startMs to endMs },
                     onRecordClick = onRecordClick
                 )
             }
@@ -2140,6 +2174,8 @@ private fun TimelineContent(
     notedRecordIds: Set<String>,
     compactView: Boolean,
     contentActive: Boolean,
+    blankFillModeActive: Boolean = false,
+    onBlankSlotClick: ((startTime: Long, endTime: Long) -> Unit)? = null,
     onRecordClick: (RecordEntity) -> Unit
 ) {
     val dayStart = remember(day) { TimeUtils.startOfDay(day) }
@@ -2183,6 +2219,8 @@ private fun TimelineContent(
                 showNowLine = showNowLine,
                 verticalScale = timelineVerticalScale,
                 parentListState = listState,
+                blankFillModeActive = blankFillModeActive,
+                onBlankSlotClick = onBlankSlotClick,
                 onVerticalScaleChange = { timelineVerticalScale = it },
                 onRecordClick = onRecordClick
             )
@@ -5180,6 +5218,8 @@ private fun TimelineDayView(
     showNowLine: Boolean,
     verticalScale: Float,
     parentListState: LazyListState,
+    blankFillModeActive: Boolean = false,
+    onBlankSlotClick: ((startTime: Long, endTime: Long) -> Unit)? = null,
     onVerticalScaleChange: (Float) -> Unit,
     onRecordClick: (RecordEntity) -> Unit
 ) {
@@ -5235,6 +5275,40 @@ private fun TimelineDayView(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(timelineHeight + 16.dp).padding(vertical = 8.dp)) {
+            val backgroundClickModifier = if (blankFillModeActive && onBlankSlotClick != null) {
+                Modifier.pointerInput(items, dayStart, minuteHeight, now) {
+                    detectTapGestures { offset ->
+                        val clickY = offset.y
+                        val minuteHeightPx = minuteHeight.toPx()
+                        val clickedMinute = (clickY / minuteHeightPx).coerceIn(0f, 1440f)
+                        val clickedTimestamp = dayStart + (clickedMinute * 60_000L).toLong()
+
+                        val prevItem = items
+                            .filter { it.endTime <= clickedTimestamp }
+                            .maxByOrNull { it.endTime }
+                        val startMs = prevItem?.endTime ?: dayStart
+
+                        val nextItem = items
+                            .filter { it.startTime >= clickedTimestamp }
+                            .minByOrNull { it.startTime }
+                        val isToday = TimeUtils.toLocalDate(dayStart) == LocalDate.now()
+                        val endMs = nextItem?.startTime ?: if (isToday) minOf(now, dayStart + 86_400_000L) else (dayStart + 86_400_000L)
+
+                        if (endMs > startMs) {
+                            onBlankSlotClick(startMs, endMs)
+                        }
+                    }
+                }
+            } else {
+                Modifier
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(backgroundClickModifier)
+            )
+
             val contentWidth = maxWidth - labelWidth - 8.dp
             repeat(25) { hour ->
                 val y = minuteHeight * (hour * 60f)
@@ -5385,6 +5459,177 @@ private fun TimelineRecordBlock(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlankSlotBackfillDialog(
+    interval: Pair<Long, Long>,
+    groups: List<GroupEntity>,
+    eventsByGroup: Map<String, List<EventEntity>>,
+    onDismiss: () -> Unit,
+    onConfirm: (eventId: String, startTime: Long, endTime: Long) -> Unit
+) {
+    var selectedGroupId by remember(groups) { mutableStateOf<String?>(null) }
+    var selectedEventId by remember { mutableStateOf("") }
+    val (startTime, endTime) = interval
+    val groupById = remember(groups) { groups.associateBy { it.id } }
+
+    val displayEvents = remember(selectedGroupId, eventsByGroup) {
+        if (selectedGroupId == null) {
+            eventsByGroup.values.flatten().distinctBy { it.id }
+        } else {
+            eventsByGroup[selectedGroupId].orEmpty()
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "填补空白时段",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${TimeUtils.formatTime(startTime, false)} → ${TimeUtils.formatTime(endTime, false)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Text(
+                    text = "选择分组与事件：",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = selectedGroupId == null,
+                        onClick = { selectedGroupId = null },
+                        label = { Text("全部") }
+                    )
+                    groups.forEach { group ->
+                        FilterChip(
+                            selected = selectedGroupId == group.id,
+                            onClick = { selectedGroupId = group.id },
+                            label = { Text(group.name) },
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(colorFromArgb(group.colorArgb), CircleShape)
+                                )
+                            }
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                ) {
+                    if (displayEvents.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("无可用事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.padding(6.dp)) {
+                            items(displayEvents) { event ->
+                                val selected = selectedEventId == event.id
+                                val group = groupById[event.groupId]
+                                val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
+
+                                Surface(
+                                    onClick = { selectedEventId = event.id },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = selected,
+                                            onClick = { selectedEventId = event.id }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .background(groupColor, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = if (event.isFavorite) "★ ${event.name}" else event.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (group != null) {
+                                                Text(
+                                                    text = group.name,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (selectedEventId.isNotBlank()) {
+                                onConfirm(selectedEventId, startTime, endTime)
+                            }
+                        },
+                        enabled = selectedEventId.isNotBlank()
+                    ) {
+                        Text("确认填补")
                     }
                 }
             }
