@@ -130,6 +130,7 @@ fun NotesScreen(
 ) {
     var selectedSection by rememberSaveable { mutableIntStateOf(0) }
     var showCreateTaskDialog by remember { mutableStateOf(false) }
+    var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -160,7 +161,8 @@ fun NotesScreen(
                     viewModel = viewModel,
                     events = events,
                     tasks = tasks,
-                    onAddTask = { showCreateTaskDialog = true }
+                    onAddTask = { showCreateTaskDialog = true },
+                    onEditTask = { editingTask = it }
                 )
             } else {
                 NotesSection(
@@ -193,6 +195,24 @@ fun NotesScreen(
             }
         )
     }
+
+    if (editingTask != null) {
+        val existingLocations = remember(tasks) { tasks.mapNotNull { it.location }.filter { it.isNotBlank() }.distinct() }
+        val existingPeople = remember(tasks) { tasks.mapNotNull { it.person }.filter { it.isNotBlank() }.distinct() }
+
+        TaskEditDialog(
+            initialTask = editingTask,
+            events = events,
+            existingLocations = existingLocations,
+            existingPeople = existingPeople,
+            onDismiss = { editingTask = null },
+            onConfirm = { title, eventId, location, person, taskType, targetDateEpochDay ->
+                val taskId = editingTask!!.id
+                editingTask = null
+                viewModel.updateTask(taskId, title, eventId, location, person, taskType, targetDateEpochDay)
+            }
+        )
+    }
 }
 
 @Composable
@@ -200,7 +220,8 @@ private fun TasksSection(
     viewModel: MainViewModel,
     events: List<EventEntity>,
     tasks: List<TaskEntity>,
-    onAddTask: () -> Unit
+    onAddTask: () -> Unit,
+    onEditTask: (TaskEntity) -> Unit
 ) {
     val eventMap = remember(events) { events.associateBy { it.id } }
     val (pendingTasks, completedTasks) = remember(tasks) {
@@ -274,6 +295,7 @@ private fun TasksSection(
                 TaskItemCard(
                     task = task,
                     event = event,
+                    onClick = { onEditTask(task) },
                     onToggle = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.toggleTaskCompleted(task.id)
@@ -319,6 +341,7 @@ private fun TasksSection(
                     TaskItemCard(
                         task = task,
                         event = event,
+                        onClick = { onEditTask(task) },
                         onToggle = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.toggleTaskCompleted(task.id)
@@ -337,9 +360,10 @@ private fun TasksSection(
 }
 
 @Composable
-private fun TaskItemCard(
+internal fun TaskItemCard(
     task: TaskEntity,
     event: EventEntity?,
+    onClick: () -> Unit,
     onToggle: () -> Unit,
     onStartEvent: () -> Unit,
     onDelete: () -> Unit
@@ -352,11 +376,19 @@ private fun TaskItemCard(
         task.taskType == TaskType.LongTerm && targetDate != null && !task.isCompleted && today.isAfter(targetDate)
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current)),
-        border = BorderStroke(1.dp, if (isOverdue) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    val cardBg = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = (MaterialTheme.colorScheme.surfaceContainerLow.alpha * LocalComponentAlpha.current).coerceIn(0f, 1f))
+    val borderColor = if (isOverdue) MaterialTheme.colorScheme.error.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+
+    MiuixCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .border(BorderStroke(1.dp, borderColor), shape = RoundedCornerShape(22.dp)),
+        cornerRadius = 22.dp,
+        colors = MiuixCardDefaults.defaultColors(
+            color = cardBg,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -490,6 +522,7 @@ private fun TaskItemCard(
 
 @Composable
 private fun TaskEditDialog(
+    initialTask: TaskEntity? = null,
     events: List<EventEntity>,
     existingLocations: List<String>,
     existingPeople: List<String>,
@@ -503,13 +536,19 @@ private fun TaskEditDialog(
         targetDateEpochDay: Long?
     ) -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
-    var selectedEventId by remember { mutableStateOf<String?>(null) }
-    var location by remember { mutableStateOf("") }
-    var person by remember { mutableStateOf("") }
-    var taskType by remember { mutableStateOf(TaskType.Normal) }
-    var targetDate by remember { mutableStateOf(LocalDate.now().plusDays(1)) }
+    var title by remember(initialTask) { mutableStateOf(initialTask?.title.orEmpty()) }
+    var selectedEventId by remember(initialTask) { mutableStateOf(initialTask?.eventId) }
+    var location by remember(initialTask) { mutableStateOf(initialTask?.location.orEmpty()) }
+    var person by remember(initialTask) { mutableStateOf(initialTask?.person.orEmpty()) }
+    var taskType by remember(initialTask) { mutableStateOf(initialTask?.taskType ?: TaskType.Normal) }
+    var targetDate by remember(initialTask) {
+        mutableStateOf(initialTask?.targetDateEpochDay?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now().plusDays(1))
+    }
     var showDatePicker by remember { mutableStateOf(false) }
+
+    val isEdit = initialTask != null
+    val dialogTitle = if (isEdit) "编辑待办 / 备忘" else "新建待办 / 备忘"
+    val confirmButtonText = if (isEdit) "保存修改" else "创建"
 
     val context = LocalContext.current
 
@@ -544,7 +583,7 @@ private fun TaskEditDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "新建待办 / 备忘",
+                    text = dialogTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -680,7 +719,7 @@ private fun TaskEditDialog(
                         },
                         enabled = title.isNotBlank()
                     ) {
-                        Text("创建")
+                        Text(confirmButtonText)
                     }
                 }
             }
@@ -759,7 +798,7 @@ private fun NotesSection(
 }
 
 @Composable
-private fun NoteListRow(
+internal fun NoteListRow(
     record: RecordEntity,
     isImageOnly: Boolean,
     onClick: () -> Unit

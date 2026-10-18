@@ -426,6 +426,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateTask(
+        taskId: String,
+        title: String,
+        eventId: String?,
+        location: String?,
+        person: String?,
+        taskType: TaskType,
+        targetDateEpochDay: Long?
+    ) {
+        viewModelScope.launch {
+            repository.updateTask(taskId, title, eventId, location, person, taskType, targetDateEpochDay)
+            showToast("已更新待办事项！")
+        }
+    }
+
     fun toggleTaskCompleted(taskId: String) {
         viewModelScope.launch { repository.toggleTaskCompleted(taskId) }
     }

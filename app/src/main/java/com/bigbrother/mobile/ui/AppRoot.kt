@@ -209,6 +209,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.IttForegroundService
 import com.bigbrother.mobile.data.IttNotificationHelper
+import com.bigbrother.mobile.data.TaskEntity
 import com.bigbrother.mobile.R
 import com.bigbrother.mobile.data.EventEntity
 import com.bigbrother.mobile.data.EventGridColumns
@@ -842,14 +843,17 @@ fun AppRoot(
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Stats -> StatsScreen(
+                                        viewModel = viewModel,
                                         settings = settings,
                                         events = visibleEvents,
                                         records = records,
+                                        tasks = tasks,
                                         range = statsRange,
                                         date = statsDate,
                                         contentActive = contentActive,
                                         onRangeChange = viewModel::setStatsRange,
                                         onDateChange = viewModel::setStatsDate,
+                                        onOpenNote = openNote,
                                         onRegisterOnboardingTarget = { key, rect -> if (onboardingCompleted != true) onboardingTargets[key] = rect }
                                     )
                                     AppTab.Notes -> NotesScreen(
@@ -2233,14 +2237,17 @@ private fun TimelineContent(
 }
 @Composable
 private fun StatsScreen(
+    viewModel: MainViewModel,
     settings: AppSettings,
     events: List<EventEntity>,
     records: List<RecordEntity>,
+    tasks: List<TaskEntity>,
     range: StatsRangeKind,
     date: LocalDate,
     contentActive: Boolean,
     onRangeChange: (StatsRangeKind) -> Unit,
     onDateChange: (LocalDate) -> Unit,
+    onOpenNote: (RecordEntity) -> Unit,
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
@@ -2414,9 +2421,176 @@ private fun StatsScreen(
                 }
             }
         }
+        item {
+            TagClassificationSectionCard(
+                viewModel = viewModel,
+                events = events,
+                records = records,
+                tasks = tasks,
+                onOpenNote = onOpenNote
+            )
+        }
     }
 }
+}
 
+enum class TagDimension { Location, Person, Event }
+
+@Composable
+private fun TagClassificationSectionCard(
+    viewModel: MainViewModel,
+    events: List<EventEntity>,
+    records: List<RecordEntity>,
+    tasks: List<TaskEntity>,
+    onOpenNote: (RecordEntity) -> Unit
+) {
+    var dimension by rememberSaveable { mutableStateOf(TagDimension.Location) }
+    var selectedTag by remember { mutableStateOf<String?>(null) }
+
+    val eventMap = remember(events) { events.associateBy { it.id } }
+
+    val tagItems = remember(dimension, records, tasks, events) {
+        when (dimension) {
+            TagDimension.Location -> {
+                val locsFromTasks = tasks.mapNotNull { it.location }.filter { it.isNotBlank() }
+                val locsFromRecords = records.mapNotNull { r ->
+                    val match = Regex("\\[地点:\\s*([^\\]]+)\\]").find(r.noteText)
+                    match?.groupValues?.get(1)?.trim()
+                }
+                val allLocs = (locsFromTasks + locsFromRecords).distinct()
+                allLocs.map { loc ->
+                    val matchedTasks = tasks.filter { it.location == loc }
+                    val matchedRecords = records.filter { it.noteText.contains("[地点: $loc]") }
+                    Triple(loc, matchedTasks, matchedRecords)
+                }.sortedByDescending { it.second.size + it.third.size }
+            }
+            TagDimension.Person -> {
+                val peopleFromTasks = tasks.mapNotNull { it.person }.filter { it.isNotBlank() }
+                val peopleFromRecords = records.mapNotNull { r ->
+                    val match = Regex("\\[人物:\\s*([^\\]]+)\\]").find(r.noteText)
+                    match?.groupValues?.get(1)?.trim()
+                }
+                val allPeople = (peopleFromTasks + peopleFromRecords).distinct()
+                allPeople.map { p ->
+                    val matchedTasks = tasks.filter { it.person == p }
+                    val matchedRecords = records.filter { it.noteText.contains("[人物: $p]") }
+                    Triple(p, matchedTasks, matchedRecords)
+                }.sortedByDescending { it.second.size + it.third.size }
+            }
+            TagDimension.Event -> {
+                events.map { event ->
+                    val matchedTasks = tasks.filter { it.eventId == event.id }
+                    val matchedRecords = records.filter { it.eventId == event.id && it.noteText.isNotBlank() }
+                    Triple(event.name, matchedTasks, matchedRecords)
+                }.filter { it.second.isNotEmpty() || it.third.isNotEmpty() }
+                    .sortedByDescending { it.second.size + it.third.size }
+            }
+        }
+    }
+
+    SectionCard(title = "标签分类与备忘检索") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("按指定地点、人物或事件，精准检索分类下的待办与历史备注", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            KernelSegmentedControl(
+                labels = listOf("📍 按地点", "👤 按人物", "📌 按事件"),
+                selectedIndex = when (dimension) {
+                    TagDimension.Location -> 0
+                    TagDimension.Person -> 1
+                    TagDimension.Event -> 2
+                },
+                onSelected = { index ->
+                    dimension = when (index) {
+                        1 -> TagDimension.Person
+                        2 -> TagDimension.Event
+                        else -> TagDimension.Location
+                    }
+                    selectedTag = null
+                }
+            )
+
+            if (tagItems.isEmpty()) {
+                Text("暂无关联标签记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    tagItems.forEach { (tagName, matchedTasks, matchedRecords) ->
+                        val isSelected = selectedTag == tagName
+                        val totalCount = matchedTasks.size + matchedRecords.size
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedTag = if (isSelected) null else tagName
+                            },
+                            label = { Text("$tagName ($totalCount)") }
+                        )
+                    }
+                }
+
+                val activeTagItem = remember(selectedTag, tagItems) {
+                    selectedTag?.let { name -> tagItems.firstOrNull { it.first == name } } ?: tagItems.firstOrNull()
+                }
+
+                if (activeTagItem != null) {
+                    val (tagName, matchedTasks, matchedRecords) = activeTagItem
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "“$tagName” 分类检索结果：",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        if (matchedTasks.isNotEmpty()) {
+                            Text(
+                                text = "待办清单 (${matchedTasks.size})：",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            matchedTasks.forEach { task ->
+                                val event = task.eventId?.let { eventMap[it] }
+                                TaskItemCard(
+                                    task = task,
+                                    event = event,
+                                    onClick = {},
+                                    onToggle = { viewModel.toggleTaskCompleted(task.id) },
+                                    onStartEvent = { viewModel.startTaskAsEvent(task.id) },
+                                    onDelete = { viewModel.deleteTask(task.id) }
+                                )
+                            }
+                        }
+
+                        if (matchedRecords.isNotEmpty()) {
+                            if (matchedTasks.isNotEmpty()) Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "打卡图文备注 (${matchedRecords.size})：",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            matchedRecords.take(5).forEach { record ->
+                                NoteListRow(
+                                    record = record,
+                                    isImageOnly = record.noteText.isBlank(),
+                                    onClick = { onOpenNote(record) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

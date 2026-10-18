@@ -839,6 +839,27 @@ class AppRepository(
         task.id
     }
 
+    suspend fun updateTask(
+        taskId: String,
+        title: String,
+        eventId: String?,
+        location: String?,
+        person: String?,
+        taskType: TaskType,
+        targetDateEpochDay: Long?
+    ) = database.withTransaction {
+        val existing = tasksDao.getById(taskId) ?: return@withTransaction
+        val updated = existing.copy(
+            title = title.trim(),
+            eventId = eventId,
+            location = location?.trim()?.ifBlank { null },
+            person = person?.trim()?.ifBlank { null },
+            taskType = taskType,
+            targetDateEpochDay = targetDateEpochDay
+        )
+        tasksDao.insert(updated)
+    }
+
     suspend fun toggleTaskCompleted(taskId: String) = database.withTransaction {
         val task = tasksDao.getById(taskId) ?: return@withTransaction
         val newCompleted = !task.isCompleted
