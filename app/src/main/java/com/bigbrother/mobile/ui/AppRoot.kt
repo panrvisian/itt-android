@@ -206,6 +206,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
+import com.bigbrother.mobile.data.IttForegroundService
 import com.bigbrother.mobile.data.IttNotificationHelper
 import com.bigbrother.mobile.R
 import com.bigbrother.mobile.data.EventEntity
@@ -484,21 +485,18 @@ fun AppRoot(
         }
     }
 
+    val serviceEnabled = settings.ongoingNotificationEnabled || settings.inactivityReminderEnabled
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted && settings.ongoingNotificationEnabled) {
-            val running = records.firstOrNull { it.endTime == null }
-            IttNotificationHelper.updateOngoingNotification(
-                context = context,
-                runningEventName = running?.eventNameSnapshot,
-                startTime = running?.startTime
-            )
+        if (isGranted && serviceEnabled) {
+            IttForegroundService.startService(context)
         }
     }
 
-    LaunchedEffect(records, settings.ongoingNotificationEnabled) {
-        if (settings.ongoingNotificationEnabled) {
+    LaunchedEffect(records, serviceEnabled) {
+        if (serviceEnabled) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(
                     context,
@@ -507,14 +505,10 @@ fun AppRoot(
             ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                val running = records.firstOrNull { it.endTime == null }
-                IttNotificationHelper.updateOngoingNotification(
-                    context = context,
-                    runningEventName = running?.eventNameSnapshot,
-                    startTime = running?.startTime
-                )
+                IttForegroundService.startService(context)
             }
         } else {
+            IttForegroundService.stopService(context)
             IttNotificationHelper.cancelOngoingNotification(context)
         }
     }

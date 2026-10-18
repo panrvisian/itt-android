@@ -1,6 +1,7 @@
 package com.bigbrother.mobile.data
 
 import android.annotation.SuppressLint
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -31,12 +32,11 @@ object IttNotificationHelper {
         }
     }
 
-    @SuppressLint("MissingPermission")
-    fun updateOngoingNotification(
+    fun buildOngoingNotification(
         context: Context,
         runningEventName: String?,
         startTime: Long?
-    ) {
+    ): Notification {
         createNotificationChannel(context)
 
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -66,18 +66,31 @@ object IttNotificationHelper {
                 .setContentText("当前空闲状态，点击开启打卡或快捷补录")
         }
 
+        return builder.build()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun updateOngoingNotification(
+        context: Context,
+        runningEventName: String?,
+        startTime: Long?
+    ) {
+        val notification = buildOngoingNotification(context, runningEventName, startTime)
         runCatching {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         }
     }
 
     @SuppressLint("MissingPermission")
-    fun sendInactivityReminder(context: Context) {
+    fun sendInactivityReminder(
+        context: Context,
+        title: String = "已经空闲 3 分钟啦",
+        text: String = "记得及时记录事件哦，点击返回首页"
+    ) {
         createNotificationChannel(context)
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("open_mode", "backfill")
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -88,8 +101,8 @@ object IttNotificationHelper {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("已经空闲 2 小时啦")
-            .setContentText("刚才忙了什么？点击一键快捷补录")
+            .setContentTitle(title)
+            .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

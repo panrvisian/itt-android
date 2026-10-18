@@ -3,6 +3,8 @@
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" tools:ignore="SystemPermissionTypo" />
 
     <application
         android:name=".BigBrotherApp"
@@ -12,6 +14,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BigBrotherMobile.Splash">
+        <service
+            android:name=".data.IttForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            tools:ignore="ForegroundServicePermission" />
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
