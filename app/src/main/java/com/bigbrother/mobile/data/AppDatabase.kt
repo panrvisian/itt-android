@@ -193,7 +193,7 @@ interface TaskDao {
 
 @Database(
     entities = [GroupEntity::class, EventEntity::class, RecordEntity::class, NoteImageEntity::class, TaskEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -223,16 +223,22 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `tasks` (" +
                         "`id` TEXT NOT NULL PRIMARY KEY, " +
                         "`title` TEXT NOT NULL, " +
-                        "`eventId` TEXT, " +
-                        "`location` TEXT, " +
-                        "`person` TEXT, " +
+                        "`groupId` TEXT, " +
                         "`isCompleted` INTEGER NOT NULL DEFAULT 0, " +
                         "`createdTime` INTEGER NOT NULL, " +
                         "`completedTime` INTEGER, " +
-                        "`priority` INTEGER NOT NULL DEFAULT 0, " +
-                        "`taskType` TEXT NOT NULL DEFAULT 'Normal', " +
-                        "`targetDateEpochDay` INTEGER)"
+                        "`priority` INTEGER NOT NULL DEFAULT 0)"
                 )
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `eventId` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `location` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `person` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `taskType` TEXT NOT NULL DEFAULT 'Normal'")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `targetDateEpochDay` INTEGER")
             }
         }
     }
