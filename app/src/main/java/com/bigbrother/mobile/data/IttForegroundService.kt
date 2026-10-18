@@ -27,7 +27,7 @@ class IttForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = IttNotificationHelper.buildOngoingNotification(this, null, null)
+        val notification = IttNotificationHelper.buildOngoingNotification(this, emptyList())
         runCatching {
             startForeground(IttNotificationHelper.NOTIFICATION_ID, notification)
         }
@@ -42,18 +42,17 @@ class IttForegroundService : Service() {
 
         serviceScope.launch {
             repository.records.collectLatest { records ->
-                val running = records.firstOrNull { it.endTime == null }
+                val runningRecords = records.filter { it.endTime == null }
                 val settings = repository.settings.first()
 
                 if (settings.ongoingNotificationEnabled) {
                     IttNotificationHelper.updateOngoingNotification(
                         context = this@IttForegroundService,
-                        runningEventName = running?.eventNameSnapshot,
-                        startTime = running?.startTime
+                        runningEvents = runningRecords
                     )
                 }
 
-                if (running != null || !settings.inactivityReminderEnabled) {
+                if (runningRecords.isNotEmpty() || !settings.inactivityReminderEnabled) {
                     reminderJob?.cancel()
                     reminderJob = null
                 } else {

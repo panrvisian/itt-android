@@ -34,8 +34,7 @@ object IttNotificationHelper {
 
     fun buildOngoingNotification(
         context: Context,
-        runningEventName: String?,
-        startTime: Long?
+        runningEvents: List<RecordEntity>
     ): Notification {
         createNotificationChannel(context)
 
@@ -56,11 +55,29 @@ object IttNotificationHelper {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
 
-        if (!runningEventName.isNullOrBlank() && startTime != null) {
-            builder.setContentTitle("正在进行：$runningEventName")
-                .setContentText("已实时打卡计时，点击返回应用")
-                .setUsesChronometer(true)
-                .setWhen(startTime)
+        if (runningEvents.isNotEmpty()) {
+            val count = runningEvents.size
+            if (count == 1) {
+                val single = runningEvents.first()
+                builder.setContentTitle("正在进行：${single.eventNameSnapshot}")
+                    .setContentText("已实时打卡计时，点击返回应用")
+                    .setUsesChronometer(true)
+                    .setWhen(single.startTime)
+            } else {
+                val eventNamesStr = runningEvents.joinToString("、") { it.eventNameSnapshot }
+                val earliestStartTime = runningEvents.minOf { it.startTime }
+                val bulletList = runningEvents.joinToString("\n") { "• ${it.eventNameSnapshot}" }
+
+                builder.setContentTitle("正在进行 ($count 项)")
+                    .setContentText("包含：$eventNamesStr")
+                    .setStyle(
+                        NotificationCompat.BigTextStyle()
+                            .setBigContentTitle("正在进行 ($count 项)")
+                            .bigText("当前进行中的打卡项目：\n$bulletList")
+                    )
+                    .setUsesChronometer(true)
+                    .setWhen(earliestStartTime)
+            }
         } else {
             builder.setContentTitle("Individual Time Trial")
                 .setContentText("当前空闲状态，点击开启打卡或快捷补录")
@@ -72,10 +89,9 @@ object IttNotificationHelper {
     @SuppressLint("MissingPermission")
     fun updateOngoingNotification(
         context: Context,
-        runningEventName: String?,
-        startTime: Long?
+        runningEvents: List<RecordEntity>
     ) {
-        val notification = buildOngoingNotification(context, runningEventName, startTime)
+        val notification = buildOngoingNotification(context, runningEvents)
         runCatching {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         }
