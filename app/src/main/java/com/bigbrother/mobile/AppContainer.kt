@@ -14,7 +14,6 @@ class AppContainer(context: Context) {
         AppDatabase::class.java,
         "big_brother_mobile.db"
     ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
-        .fallbackToDestructiveMigration()
         .build()
     val repository = AppRepository(appContext, database, settingsStore)
 }

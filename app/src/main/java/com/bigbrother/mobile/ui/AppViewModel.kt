@@ -449,6 +449,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.deleteTask(taskId) }
     }
 
+    fun triggerAutoSnapshot() {
+        viewModelScope.launch { repository.triggerAutoSnapshot() }
+    }
+
+    fun restoreAutoSnapshot() {
+        viewModelScope.launch {
+            val success = repository.restoreAutoSnapshot()
+            if (success) {
+                showToast("已成功从系统快照还原全量打卡与待办数据！")
+            } else {
+                showToast("未找到可恢复的系统快照")
+            }
+        }
+    }
+
     fun startTaskAsEvent(taskId: String) {
         viewModelScope.launch {
             repository.startTaskAsEvent(taskId)

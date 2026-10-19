@@ -208,6 +208,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bigbrother.mobile.data.AppSettings
 import com.bigbrother.mobile.data.IttForegroundService
+import com.bigbrother.mobile.data.AutoBackupStore
 import com.bigbrother.mobile.data.IttNotificationHelper
 import com.bigbrother.mobile.data.TaskEntity
 import com.bigbrother.mobile.R
@@ -480,6 +481,12 @@ fun AppRoot(
     val tabs = remember { appBottomBarDestinations.map { it.tab } }
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
+
+    LaunchedEffect(records, tasks) {
+        if (records.isNotEmpty() || tasks.isNotEmpty()) {
+            viewModel.triggerAutoSnapshot()
+        }
+    }
 
     LaunchedEffect(toastMessage) {
         if (toastMessage != null) {
@@ -924,6 +931,7 @@ fun AppRoot(
                         SettingsPage.Statistics -> StatisticsSettings(settings = settings, viewModel = viewModel)
                         SettingsPage.Semester -> SemesterSettings(settings, viewModel) { showSemesterStartDialog = true }
                         SettingsPage.Data -> DataSettings(
+                            viewModel = viewModel,
                             onExportFull = { exportLauncher.launch("big_brother_mobile.zip") },
                             onExportRangeZip = { start, end, filename ->
                                 exportRangeStartDate = start
@@ -3595,13 +3603,45 @@ enum class ExportRangeKind {
 
 @Composable
 private fun DataSettings(
+    viewModel: MainViewModel,
     onExportFull: () -> Unit,
     onExportRangeZip: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit,
     onExportRangeCsv: (startDate: LocalDate, endDate: LocalDate, filename: String) -> Unit,
     onImportReplace: () -> Unit,
     onImportMerge: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionCard(title = "系统快照与灾备保护") {
+            val hasSnapshot = remember { AutoBackupStore.hasSnapshot(context) }
+            val snapshotSize = remember { AutoBackupStore.snapshotSizeFormatted(context) }
+            val snapshotTime = remember { AutoBackupStore.snapshotTimeFormatted(context) }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "系统会在后台防丢自动生成快照。遇到任何异常，可随时一键恢复！",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "最新系统快照：$snapshotTime (占用 $snapshotSize)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Button(
+                    onClick = { viewModel.restoreAutoSnapshot() },
+                    enabled = hasSnapshot,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("恢复最新系统快照")
+                }
+            }
+        }
+
         SectionCard(title = "全量数据备份") {
             Text("包含全历史记录、全量备注照片与所有应用设置", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(10.dp))

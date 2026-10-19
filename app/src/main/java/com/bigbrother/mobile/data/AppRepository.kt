@@ -488,6 +488,10 @@ class AppRepository(
 
     suspend fun importCsv(uri: Uri, merge: Boolean) = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@withContext
+        importZipData(bytes, merge)
+    }
+
+    suspend fun importZipData(bytes: ByteArray, merge: Boolean) = withContext(Dispatchers.IO) {
         val (csvText, imageEntries) = if (isZip(bytes)) readZip(bytes) else Pair(bytes.toString(Charsets.UTF_8), emptyList())
         val imported = CsvCodec.parse(csvText.removePrefix("\uFEFF"))
         if (!merge) {
@@ -748,7 +752,7 @@ class AppRepository(
         }
     }
 
-    private fun buildZip(bundle: AppBundle): ByteArray {
+    suspend fun buildZip(bundle: AppBundle): ByteArray = withContext(Dispatchers.IO) {
         val bos = ByteArrayOutputStream()
         ZipOutputStream(bos).use { zip ->
             zip.putNextEntry(ZipEntry("big_brother_mobile.csv"))
@@ -764,7 +768,7 @@ class AppRepository(
                 }
             }
         }
-        return bos.toByteArray()
+        bos.toByteArray()
     }
 
     private fun isZip(bytes: ByteArray): Boolean =
@@ -889,6 +893,16 @@ class AppRepository(
         recordsDao.updateNoteText(recordId, formattedNote)
         recordId
     }.also { requestWidgetRefresh() }
+
+    suspend fun triggerAutoSnapshot() {
+        AutoBackupStore.createAutoSnapshot(context, this)
+    }
+
+    suspend fun restoreAutoSnapshot(): Boolean {
+        return AutoBackupStore.restoreLatestSnapshot(context, this).also {
+            if (it) requestWidgetRefresh()
+        }
+    }
 
     private fun requestWidgetRefresh() {
         QuickEventWidgetProvider.requestRefresh(context)
