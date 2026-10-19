@@ -4348,11 +4348,12 @@ private fun RecordDetailDialog(
 }
 @Composable
 internal fun UnifiedEventSelector(
-    selectedEventId: String,
+    selectedEventId: String?,
     sortedEvents: List<EventEntity>,
     groups: List<GroupEntity>,
     groupById: Map<String, GroupEntity>,
-    onEventSelect: (String) -> Unit,
+    allowUnlinked: Boolean = false,
+    onEventSelect: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var filterGroupId by remember(groups) { mutableStateOf<String?>(null) }
@@ -4396,7 +4397,7 @@ internal fun UnifiedEventSelector(
                 .fillMaxWidth()
                 .heightIn(max = 200.dp)
         ) {
-            if (displayEvents.isEmpty()) {
+            if (displayEvents.isEmpty() && !allowUnlinked) {
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     contentAlignment = Alignment.Center
@@ -4405,6 +4406,35 @@ internal fun UnifiedEventSelector(
                 }
             } else {
                 LazyColumn(modifier = Modifier.padding(6.dp)) {
+                    if (allowUnlinked) {
+                        item {
+                            val selected = selectedEventId == null
+                            Surface(
+                                onClick = { onEventSelect(null) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = { onEventSelect(null) }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "不关联（仅做待办）",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     items(displayEvents) { event ->
                         val selected = selectedEventId == event.id
                         val group = groupById[event.groupId]
@@ -4491,7 +4521,8 @@ private fun CloneRecordDialog(
                         sortedEvents = sortedEvents,
                         groups = groups,
                         groupById = groupById,
-                        onEventSelect = { selectedEventId = it }
+                        allowUnlinked = false,
+                        onEventSelect = { if (it != null) selectedEventId = it }
                     )
                 }
             }
@@ -4567,7 +4598,8 @@ private fun ManualRecordDialog(
                         sortedEvents = sortedEvents,
                         groups = groups,
                         groupById = groupById,
-                        onEventSelect = { selectedEventId = it }
+                        allowUnlinked = false,
+                        onEventSelect = { if (it != null) selectedEventId = it }
                     )
 
                     Text("开始")

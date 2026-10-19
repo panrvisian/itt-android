@@ -550,11 +550,7 @@ private fun TaskEditDialog(
     }
     var showDatePicker by remember { mutableStateOf(false) }
 
-    var filterGroupId by remember(groups) { mutableStateOf<String?>(null) }
     val groupById = remember(groups) { groups.associateBy { it.id } }
-    val displayEvents = remember(filterGroupId, events) {
-        if (filterGroupId == null) events else events.filter { it.groupId == filterGroupId }
-    }
 
     val isEdit = initialTask != null
     val dialogTitle = if (isEdit) "编辑待办 / 备忘" else "新建待办 / 备忘"
@@ -608,107 +604,14 @@ private fun TaskEditDialog(
                 )
 
                 Text("关联事件库（打卡时自动记录）：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FilterChip(
-                        selected = filterGroupId == null,
-                        onClick = { filterGroupId = null },
-                        label = { Text("全部") }
-                    )
-                    groups.forEach { group ->
-                        FilterChip(
-                            selected = filterGroupId == group.id,
-                            onClick = { filterGroupId = group.id },
-                            label = { Text(group.name) },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .background(colorFromArgb(group.colorArgb), CircleShape)
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 200.dp)
-                ) {
-                    LazyColumn(modifier = Modifier.padding(6.dp)) {
-                        item {
-                            val selected = selectedEventId == null
-                            Surface(
-                                onClick = { selectedEventId = null },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selected,
-                                        onClick = { selectedEventId = null }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "不关联（仅做待办）",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
-
-                        items(displayEvents) { event ->
-                            val selected = selectedEventId == event.id
-                            val group = groupById[event.groupId]
-                            val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
-
-                            Surface(
-                                onClick = { selectedEventId = event.id },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selected,
-                                        onClick = { selectedEventId = event.id }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .background(groupColor, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = if (event.isFavorite) "★ ${event.name}" else event.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                UnifiedEventSelector(
+                    selectedEventId = selectedEventId,
+                    sortedEvents = events,
+                    groups = groups,
+                    groupById = groupById,
+                    allowUnlinked = true,
+                    onEventSelect = { selectedEventId = it }
+                )
 
                 Text("任务属性与时间：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 KernelSegmentedControl(
