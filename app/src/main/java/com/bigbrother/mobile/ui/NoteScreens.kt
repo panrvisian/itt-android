@@ -119,6 +119,7 @@ fun NotesScreen(
     viewModel: MainViewModel,
     notedRecords: List<RecordEntity>,
     imageRecordIds: Set<String>,
+    groups: List<GroupEntity>,
     events: List<EventEntity>,
     tasks: List<TaskEntity>,
     contentActive: Boolean,
@@ -185,6 +186,7 @@ fun NotesScreen(
         val existingPeople = remember(tasks) { tasks.mapNotNull { it.person }.filter { it.isNotBlank() }.distinct() }
 
         TaskEditDialog(
+            groups = groups,
             events = events,
             existingLocations = existingLocations,
             existingPeople = existingPeople,
@@ -202,6 +204,7 @@ fun NotesScreen(
 
         TaskEditDialog(
             initialTask = editingTask,
+            groups = groups,
             events = events,
             existingLocations = existingLocations,
             existingPeople = existingPeople,
@@ -523,6 +526,7 @@ internal fun TaskItemCard(
 @Composable
 private fun TaskEditDialog(
     initialTask: TaskEntity? = null,
+    groups: List<GroupEntity>,
     events: List<EventEntity>,
     existingLocations: List<String>,
     existingPeople: List<String>,
@@ -545,6 +549,12 @@ private fun TaskEditDialog(
         mutableStateOf(initialTask?.targetDateEpochDay?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now().plusDays(1))
     }
     var showDatePicker by remember { mutableStateOf(false) }
+
+    var filterGroupId by remember(groups) { mutableStateOf<String?>(null) }
+    val groupById = remember(groups) { groups.associateBy { it.id } }
+    val displayEvents = remember(filterGroupId, events) {
+        if (filterGroupId == null) events else events.filter { it.groupId == filterGroupId }
+    }
 
     val isEdit = initialTask != null
     val dialogTitle = if (isEdit) "编辑待办 / 备忘" else "新建待办 / 备忘"
@@ -602,19 +612,101 @@ private fun TaskEditDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilterChip(
-                        selected = selectedEventId == null,
-                        onClick = { selectedEventId = null },
-                        label = { Text("不关联") }
+                        selected = filterGroupId == null,
+                        onClick = { filterGroupId = null },
+                        label = { Text("全部") }
                     )
-                    events.forEach { event ->
+                    groups.forEach { group ->
                         FilterChip(
-                            selected = selectedEventId == event.id,
-                            onClick = { selectedEventId = event.id },
-                            label = { Text(if (event.isFavorite) "★ ${event.name}" else event.name) }
+                            selected = filterGroupId == group.id,
+                            onClick = { filterGroupId = group.id },
+                            label = { Text(group.name) },
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(colorFromArgb(group.colorArgb), CircleShape)
+                                )
+                            }
                         )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp)
+                ) {
+                    LazyColumn(modifier = Modifier.padding(6.dp)) {
+                        item {
+                            val selected = selectedEventId == null
+                            Surface(
+                                onClick = { selectedEventId = null },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = { selectedEventId = null }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "不关联（仅做待办）",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+
+                        items(displayEvents) { event ->
+                            val selected = selectedEventId == event.id
+                            val group = groupById[event.groupId]
+                            val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
+
+                            Surface(
+                                onClick = { selectedEventId = event.id },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = { selectedEventId = event.id }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .background(groupColor, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (event.isFavorite) "★ ${event.name}" else event.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 

@@ -867,6 +867,7 @@ fun AppRoot(
                                         viewModel = viewModel,
                                         notedRecords = validNoteProjection?.notedRecords.orEmpty(),
                                         imageRecordIds = validNoteProjection?.imageRecordIds.orEmpty(),
+                                        groups = visibleGroups,
                                         events = visibleEvents,
                                         tasks = tasks,
                                         contentActive = contentActive,
@@ -2259,6 +2260,7 @@ private fun StatsScreen(
     onRegisterOnboardingTarget: (OnboardingTarget, Rect) -> Unit
 ) {
     var calendarExpanded by rememberSaveable { mutableStateOf(false) }
+    var rankingExpanded by rememberSaveable { mutableStateOf(false) }
     val selectedGroupIdState = rememberSaveable { mutableStateOf("") }
     var selectedEventId by rememberSaveable { mutableStateOf<String?>(null) }
     val bounds = remember(range, date, settings.semesterStartDate, settings.semesterWeeks) {
@@ -2402,8 +2404,10 @@ private fun StatsScreen(
                     Text("没有可统计的记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     val maxMillis = max(1L, displayedEventItems.maxOf { it.total.toMillis() })
+                    val itemsToDisplay = if (rankingExpanded) displayedEventItems else displayedEventItems.take(5)
+
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        displayedEventItems.forEach { item ->
+                        itemsToDisplay.forEach { item ->
                             val progress = item.total.toMillis().toFloat() / maxMillis.toFloat()
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2423,6 +2427,15 @@ private fun StatsScreen(
                                             .background(colorFromArgb(item.groupColorArgb))
                                     )
                                 }
+                            }
+                        }
+
+                        if (displayedEventItems.size > 5) {
+                            TextButton(
+                                onClick = { rankingExpanded = !rankingExpanded },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (rankingExpanded) "收起 ▴" else "展开全部 (${displayedEventItems.size}) ▾")
                             }
                         }
                     }
@@ -4334,6 +4347,107 @@ private fun RecordDetailDialog(
     }
 }
 @Composable
+internal fun UnifiedEventSelector(
+    selectedEventId: String,
+    sortedEvents: List<EventEntity>,
+    groups: List<GroupEntity>,
+    groupById: Map<String, GroupEntity>,
+    onEventSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var filterGroupId by remember(groups) { mutableStateOf<String?>(null) }
+    val displayEvents = remember(filterGroupId, sortedEvents) {
+        if (filterGroupId == null) sortedEvents else sortedEvents.filter { it.groupId == filterGroupId }
+    }
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = filterGroupId == null,
+                onClick = { filterGroupId = null },
+                label = { Text("全部") }
+            )
+            groups.forEach { group ->
+                FilterChip(
+                    selected = filterGroupId == group.id,
+                    onClick = { filterGroupId = group.id },
+                    label = { Text(group.name) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(colorFromArgb(group.colorArgb), CircleShape)
+                        )
+                    }
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 200.dp)
+        ) {
+            if (displayEvents.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("无可用事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.padding(6.dp)) {
+                    items(displayEvents) { event ->
+                        val selected = selectedEventId == event.id
+                        val group = groupById[event.groupId]
+                        val groupColor = colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt())
+
+                        Surface(
+                            onClick = { onEventSelect(event.id) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selected,
+                                    onClick = { onEventSelect(event.id) }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(groupColor, CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (event.isFavorite) "★ ${event.name}" else event.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CloneRecordDialog(
     record: RecordEntity,
     sortedEvents: List<EventEntity>,
@@ -4343,39 +4457,13 @@ private fun CloneRecordDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    val groupIdsWithEvents = remember(groups, sortedEvents, eventsByGroup) {
-        groupIdsWithEvents(groups, eventsByGroup, sortedEvents)
-    }
     val initialEvent = remember(record.id, sortedEvents) {
         sortedEvents.firstOrNull { it.id == record.eventId } ?: sortedEvents.firstOrNull()
     }
     var selectedEventId by rememberSaveable("${record.id}_clone_event") {
         mutableStateOf(initialEvent?.id.orEmpty())
     }
-    var selectedGroupId by rememberSaveable("${record.id}_clone_group") {
-        mutableStateOf(initialEvent?.groupId.orEmpty())
-    }
-    var showingEventList by rememberSaveable("${record.id}_clone_event_level") {
-        mutableStateOf(false)
-    }
-    val selectedEvent = remember(selectedEventId, sortedEvents) {
-        sortedEvents.firstOrNull { it.id == selectedEventId }
-    }
-    val selectedGroupName = selectedEvent?.let { groupById[it.groupId]?.name ?: "未分组" }.orEmpty()
     val dialogMaxHeight = (LocalConfiguration.current.screenHeightDp * 0.86f).dp
-
-    LaunchedEffect(record.id, sortedEvents, eventsByGroup) {
-        val currentEvent = sortedEvents.firstOrNull { it.id == selectedEventId }
-        if (currentEvent == null) {
-            val first = sortedEvents.firstOrNull()
-            selectedEventId = first?.id.orEmpty()
-            selectedGroupId = first?.groupId.orEmpty()
-            showingEventList = false
-        } else if (eventsByGroup[selectedGroupId].isNullOrEmpty()) {
-            selectedGroupId = currentEvent.groupId
-            showingEventList = false
-        }
-    }
 
     SimpleDialog(title = "克隆记录", onDismiss = onDismiss) {
         Column(modifier = Modifier.heightIn(max = dialogMaxHeight)) {
@@ -4394,137 +4482,17 @@ private fun CloneRecordDialog(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text("选择克隆到的事件")
+                Text("选择克隆到的事件：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (sortedEvents.isEmpty()) {
                     Text("请先创建事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                alpha = LocalComponentAlpha.current
-                            )
-                        )
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                            Text("当前选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                selectedEvent?.name ?: "未选择事件",
-                                style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (selectedGroupName.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    selectedGroupName,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                                alpha = LocalComponentAlpha.current
-                            )
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 230.dp)
-                                .stopParentScrollAtBounds()
-                                .verticalScroll(rememberScrollState())
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            if (!showingEventList) {
-                                Text(
-                                    "先选择分组",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                                groupIdsWithEvents.forEach { groupId ->
-                                    val group = groupById[groupId]
-                                    val count = eventsByGroup[groupId].orEmpty().size
-                                    TextButton(
-                                        onClick = {
-                                            selectedGroupId = groupId
-                                            showingEventList = true
-                                        },
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(12.dp)
-                                                    .background(
-                                                        colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt()),
-                                                        shape = RoundedCornerShape(99.dp)
-                                                    )
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Text(
-                                                group?.name ?: "未分组",
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Start
-                                            )
-                                            Text("$count 个", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    TextButton(
-                                        onClick = { showingEventList = false },
-                                        modifier = Modifier.weight(1f)
-                                    ) { Text("返回分组") }
-                                    Text(
-                                        groupById[selectedGroupId]?.name ?: "未分组",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                eventsByGroup[selectedGroupId].orEmpty().forEach { event ->
-                                    TextButton(
-                                        onClick = { selectedEventId = event.id },
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            RadioButton(
-                                                selected = selectedEventId == event.id,
-                                                onClick = { selectedEventId = event.id }
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                if (event.isFavorite) "★ ${event.name}" else event.name,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Start
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    UnifiedEventSelector(
+                        selectedEventId = selectedEventId,
+                        sortedEvents = sortedEvents,
+                        groups = groups,
+                        groupById = groupById,
+                        onEventSelect = { selectedEventId = it }
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -4556,19 +4524,12 @@ private fun ManualRecordDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, Long, Long) -> Unit
 ) {
-    val groupIdsWithEvents = remember(groups, sortedEvents, eventsByGroup) {
-        groupIdsWithEvents(groups, eventsByGroup, sortedEvents)
-    }
     var selectedEventId by rememberSaveable(date.toString()) { mutableStateOf(sortedEvents.firstOrNull()?.id.orEmpty()) }
-    var selectedGroupId by rememberSaveable("${date}_manual_group") { mutableStateOf(sortedEvents.firstOrNull()?.groupId.orEmpty()) }
-    var showingEventList by rememberSaveable("${date}_manual_event_level") { mutableStateOf(false) }
     val nowDefault = remember { TimeUtils.toLocalDateTime(TimeUtils.now()) }
     var startHour by rememberSaveable(date.toString()) { mutableIntStateOf(8) }
     var startMinute by rememberSaveable(date.toString()) { mutableIntStateOf(0) }
     var endHour by rememberSaveable(date.toString()) { mutableIntStateOf(nowDefault.hour) }
     var endMinute by rememberSaveable(date.toString()) { mutableIntStateOf(nowDefault.minute) }
-    val selectedEvent = remember(selectedEventId, sortedEvents) { sortedEvents.firstOrNull { it.id == selectedEventId } }
-    val selectedGroupName = selectedEvent?.let { groupById[it.groupId]?.name ?: "未分组" }.orEmpty()
     val crossesDay = endHour < startHour || (endHour == startHour && endMinute < startMinute)
     val lastEndOfDay = remember(date, records) {
         records
@@ -4584,10 +4545,7 @@ private fun ManualRecordDialog(
 
     LaunchedEffect(sortedEvents) {
         if (sortedEvents.none { it.id == selectedEventId }) {
-            val first = sortedEvents.firstOrNull()
-            selectedEventId = first?.id.orEmpty()
-            selectedGroupId = first?.groupId.orEmpty()
-            showingEventList = false
+            selectedEventId = sortedEvents.firstOrNull()?.id.orEmpty()
         }
     }
 
@@ -4603,79 +4561,14 @@ private fun ManualRecordDialog(
                 if (sortedEvents.isEmpty()) {
                     Text("请先创建事件", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Text("事件")
-                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                            Text("当前选择", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                selectedEvent?.name ?: "未选择事件",
-                                style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (selectedGroupName.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(selectedGroupName, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-
-                    Card(shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = LocalComponentAlpha.current))) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 230.dp)
-                                .stopParentScrollAtBounds().verticalScroll(rememberScrollState())
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            if (!showingEventList) {
-                                Text("先选择分组", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                                groupIdsWithEvents.forEach { groupId ->
-                                    val group = groupById[groupId]
-                                    val count = eventsByGroup[groupId].orEmpty().size
-                                    TextButton(
-                                        onClick = {
-                                            selectedGroupId = groupId
-                                            showingEventList = true
-                                        },
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                                    ) {
-                                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                            Box(modifier = Modifier.size(12.dp).background(colorFromArgb(group?.colorArgb ?: 0xFF9E9E9E.toInt()), shape = RoundedCornerShape(99.dp)))
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Text(group?.name ?: "未分组", modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Start)
-                                            Text("$count 个", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-                            } else {
-                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(onClick = { showingEventList = false }, modifier = Modifier.weight(1f)) { Text("返回分组") }
-                                    Text(groupById[selectedGroupId]?.name ?: "未分组", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                eventsByGroup[selectedGroupId].orEmpty().forEach { event ->
-                                    TextButton(
-                                        onClick = { selectedEventId = event.id },
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
-                                    ) {
-                                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                            RadioButton(selected = selectedEventId == event.id, onClick = { selectedEventId = event.id })
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                if (event.isFavorite) "★ ${event.name}" else event.name,
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Start
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Text("选择事件：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    UnifiedEventSelector(
+                        selectedEventId = selectedEventId,
+                        sortedEvents = sortedEvents,
+                        groups = groups,
+                        groupById = groupById,
+                        onEventSelect = { selectedEventId = it }
+                    )
 
                     Text("开始")
                     TimeAdjustRow(
@@ -5811,21 +5704,13 @@ private fun BlankSlotBackfillDialog(
                                                 .background(groupColor, CircleShape)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = if (event.isFavorite) "★ ${event.name}" else event.name,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                            )
-                                            if (group != null) {
-                                                Text(
-                                                    text = group.name,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
+                                        Text(
+                                            text = if (event.isFavorite) "★ ${event.name}" else event.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
                                     }
                                 }
                             }
